@@ -8,8 +8,9 @@ import 'package:quan_ly_lich/widgets/label_dialog.dart';
 
 class AddEventScreen extends StatefulWidget {
   final Event? event; // null = thêm mới, có giá trị = đang sửa
+  final DateTime? initialDate; // ngày chọn sẵn khi thêm mới
 
-  const AddEventScreen({super.key, this.event});
+  const AddEventScreen({super.key, this.event, this.initialDate});
 
   @override
   State<AddEventScreen> createState() => _AddEventScreenState();
@@ -54,7 +55,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
     } else {
       final now = DateTime.now();
       final labels = context.read<AppData>().labels;
-      _date = DateTime(now.year, now.month, now.day);
+      _date = widget.initialDate ?? DateTime(now.year, now.month, now.day);
       _startTime = const TimeOfDay(hour: 8, minute: 0);
       _endTime = const TimeOfDay(hour: 9, minute: 0);
       _labelId = labels.isNotEmpty ? labels.first.id : null;

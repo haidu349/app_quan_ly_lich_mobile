@@ -3,8 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:quan_ly_lich/models/event.dart';
 import 'package:quan_ly_lich/providers/app_data.dart';
 import 'package:quan_ly_lich/screens/event_actions.dart';
-import 'package:quan_ly_lich/utils/format.dart';
-import 'package:quan_ly_lich/widgets/event_card.dart';
+import 'package:quan_ly_lich/widgets/day_header.dart';
+import 'package:quan_ly_lich/widgets/event_tile.dart';
 
 const int _filterAll = -1;
 const int _filterNone = -2;
@@ -67,21 +67,8 @@ class _LedgerScreenState extends State<LedgerScreen> {
     return items;
   }
 
-  void _delete(Event event) {
-    final data = context.read<AppData>();
-    data.deleteEvent(event.id!);
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(
-          content: Text('Đã xóa "${event.name}"'),
-          action: SnackBarAction(
-            label: 'Hoàn tác',
-            onPressed: () => data.addEvent(event),
-          ),
-        ),
-      );
-  }
+  Widget _chipPadding(Widget chip) =>
+      Padding(padding: const EdgeInsets.only(right: 8), child: chip);
 
   @override
   Widget build(BuildContext context) {
@@ -230,90 +217,17 @@ class _LedgerScreenState extends State<LedgerScreen> {
                           itemCount: items.length,
                           itemBuilder: (context, index) {
                             final item = items[index];
-                            if (item is DateTime) {
-                              return _DayHeader(day: item);
-                            }
-                            final event = item as Event;
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 5,
-                              ),
-                              child: Dismissible(
-                                key: ValueKey(event.id),
-                                direction: DismissDirection.endToStart,
-                                background: Container(
-                                  alignment: Alignment.centerRight,
-                                  padding: const EdgeInsets.only(right: 20),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: const Icon(
-                                    Icons.delete,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                onDismissed: (_) => _delete(event),
-                                child: EventCard(
-                                  event: event,
-                                  label: data.labelOf(event),
-                                  onTap: () =>
-                                      openEventForm(context, event: event),
-                                ),
-                              ),
-                            );
+                            if (item is DateTime) return DayHeader(day: item);
+                            return EventTile(event: item as Event);
                           },
                         ),
                 ),
               ],
             ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'ledger_fab',
         onPressed: () => openEventForm(context),
         child: const Icon(Icons.add),
-      ),
-    );
-  }
-
-  Widget _chipPadding(Widget chip) =>
-      Padding(padding: const EdgeInsets.only(right: 8), child: chip);
-}
-
-// Tiêu đề ngày kiểu "Th 2, 02/11/2026" như app của trường
-class _DayHeader extends StatelessWidget {
-  final DateTime day;
-
-  const _DayHeader({required this.day});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final now = DateTime.now();
-    final isToday =
-        day.year == now.year && day.month == now.month && day.day == now.day;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 14, 12, 4),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: scheme.primary,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              isToday
-                  ? '${formatDayHeader(day)} • Hôm nay'
-                  : formatDayHeader(day),
-              style: TextStyle(
-                color: scheme.onPrimary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          const Expanded(child: Divider(indent: 8)),
-        ],
       ),
     );
   }

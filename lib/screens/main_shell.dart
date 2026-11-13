@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:quan_ly_lich/screens/calendar_screen.dart';
 import 'package:quan_ly_lich/screens/ledger_screen.dart';
 import 'package:quan_ly_lich/screens/placeholder_screen.dart';
 import 'package:quan_ly_lich/screens/settings_screen.dart';
@@ -11,14 +12,10 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
-  int _index = 1; // mở app vào tab Sổ cái
+  int _index = 0; // mở app vào tab Lịch
 
   final List<Widget> _pages = const [
-    PlaceholderScreen(
-      title: 'Lịch',
-      icon: Icons.calendar_month,
-      message: 'Tab Lịch sẽ làm ở bước sau',
-    ),
+    CalendarScreen(),
     LedgerScreen(),
     PlaceholderScreen(
       title: 'Thống kê',
