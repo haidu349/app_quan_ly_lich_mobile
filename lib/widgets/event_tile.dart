@@ -35,6 +35,8 @@ class EventTile extends StatelessWidget {
           event: event,
           label: data.labelOf(event),
           hasConflict: data.hasConflict(event),
+          isPast: data.isPast(event),
+          isOngoing: data.isOngoing(event),
           onTap: () => openEventForm(context, event: event),
         ),
       ),

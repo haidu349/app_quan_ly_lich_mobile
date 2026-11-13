@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
@@ -16,6 +17,22 @@ class AppData extends ChangeNotifier {
   Map<int, EventLabel> _labelMap = {};
   Set<int> _conflictIds = {}; // id các sự kiện đang trùng giờ với sự kiện khác
   bool _loading = true;
+  Timer? _clock;
+
+  AppData() {
+    // Mỗi phút báo giao diện vẽ lại một lần, để các thẻ tự chuyển sang
+    // màu xám khi sự kiện vừa kết thúc.
+    _clock = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => notifyListeners(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _clock?.cancel();
+    super.dispose();
+  }
 
   bool get loading => _loading;
   UnmodifiableListView<Event> get events => UnmodifiableListView(_events);
@@ -24,6 +41,15 @@ class AppData extends ChangeNotifier {
   EventLabel? labelOf(Event event) {
     final id = event.labelId;
     return id == null ? null : _labelMap[id];
+  }
+
+  // Sự kiện đã kết thúc (giờ kết thúc <= bây giờ)
+  bool isPast(Event event) => !event.end.isAfter(DateTime.now());
+
+  // Sự kiện đã bắt đầu nhưng chưa kết thúc
+  bool isOngoing(Event event) {
+    final now = DateTime.now();
+    return !event.start.isAfter(now) && event.end.isAfter(now);
   }
 
   // Sự kiện này có đang trùng giờ với sự kiện khác không

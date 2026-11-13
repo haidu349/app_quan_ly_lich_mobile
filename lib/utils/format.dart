@@ -19,3 +19,11 @@ const _weekdays = ['Th 2', 'Th 3', 'Th 4', 'Th 5', 'Th 6', 'Th 7', 'CN'];
 String formatWeekday(DateTime d) => _weekdays[d.weekday - 1];
 
 String formatDayHeader(DateTime d) => '${formatWeekday(d)}, ${formatDate(d)}';
+
+String formatDuration(int minutes) {
+  final h = minutes ~/ 60;
+  final m = minutes % 60;
+  if (h == 0) return '$m phút';
+  if (m == 0) return '$h giờ';
+  return '$h giờ $m phút';
+}

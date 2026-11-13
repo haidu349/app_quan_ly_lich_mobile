@@ -5,6 +5,7 @@ import 'package:quan_ly_lich/models/event_label.dart';
 import 'package:quan_ly_lich/providers/app_data.dart';
 import 'package:quan_ly_lich/services/conflict_service.dart';
 import 'package:quan_ly_lich/utils/format.dart';
+import 'package:quan_ly_lich/widgets/free_slot_sheet.dart';
 import 'package:quan_ly_lich/widgets/label_dialog.dart';
 
 class AddEventScreen extends StatefulWidget {
@@ -32,6 +33,10 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
   int _minutes(TimeOfDay t) => t.hour * 60 + t.minute;
   bool get _timeInvalid => _minutes(_endTime) <= _minutes(_startTime);
+
+  // Thời lượng đang nhập (nếu giờ chưa hợp lệ thì mặc định 60 phút)
+  int get _durationMinutes =>
+      _timeInvalid ? 60 : _minutes(_endTime) - _minutes(_startTime);
 
   String _fmtTime(TimeOfDay t) {
     final h = t.hour.toString().padLeft(2, '0');
@@ -146,6 +151,26 @@ class _AddEventScreenState extends State<AddEventScreen> {
       } else {
         _endTime = picked;
       }
+    });
+  }
+
+  // Mở bảng gợi ý thời gian trống, điền ngày/giờ theo khoảng người dùng chọn
+  Future<void> _suggest() async {
+    final duration = _durationMinutes;
+    final slot = await showFreeSlotSheet(
+      context,
+      initialDay: _date,
+      durationMinutes: duration,
+      ignoreEventId: widget.event?.id,
+    );
+    if (slot == null || !mounted) return;
+
+    final newStart = slot.start;
+    final newEnd = newStart.add(Duration(minutes: duration));
+    setState(() {
+      _date = DateTime(newStart.year, newStart.month, newStart.day);
+      _startTime = TimeOfDay(hour: newStart.hour, minute: newStart.minute);
+      _endTime = TimeOfDay(hour: newEnd.hour, minute: newEnd.minute);
     });
   }
 
@@ -301,6 +326,17 @@ class _AddEventScreenState extends State<AddEventScreen> {
                 ),
               ),
 
+            // Nút gợi ý thời gian trống
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: _suggest,
+                icon: const Icon(Icons.lightbulb_outline),
+                label: const Text('Gợi ý thời gian trống'),
+              ),
+            ),
+
             // Cảnh báo trùng lịch (hiện ngay khi đổi ngày/giờ)
             if (conflicts.isNotEmpty) ...[
               const SizedBox(height: 12),
@@ -334,6 +370,14 @@ class _AddEventScreenState extends State<AddEventScreen> {
                     ),
                     const SizedBox(height: 8),
                     _ConflictList(conflicts: conflicts),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: _suggest,
+                        icon: const Icon(Icons.lightbulb_outline, size: 18),
+                        label: const Text('Tìm chỗ trống để dời'),
+                      ),
+                    ),
                   ],
                 ),
               ),
