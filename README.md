@@ -155,27 +155,148 @@ build\app\outputs\flutter-apk\app-release.apk
 
 ## 9. Xử lý sự cố thường gặp
 
-| Lỗi                                          | Cách xử lý                                                                                                                 |
+flutter
+| Lỗi | Cách xử lý |
 | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `'flutter' is not recognized`                | Thêm thư mục `bin` của Flutter vào Path, đóng hẳn rồi mở lại CMD/VS Code                                                   |
-| `cmdline-tools component is missing`         | Cài **Android SDK Command-line Tools** trong SDK Manager                                                                   |
-| `Android sdkmanager did not install NDK ...` | Cài NDK đúng phiên bản (`28.2.13676358`) bằng Android Studio → SDK Manager → SDK Tools                                     |
-| `flutter devices` không thấy điện thoại      | Chọn chế độ USB **Truyền tệp**, bật Gỡ lỗi USB, chạy `adb kill-server` rồi `adb devices`, bấm **Cho phép** trên điện thoại |
-| Không thấy máy ảo                            | Mở máy ảo trong Device Manager trước, đợi vào màn hình chính rồi chạy lại `flutter devices`                                |
-| Build lỗi khó hiểu sau khi đổi thư viện      | `flutter clean` rồi `flutter pub get` rồi `flutter run`                                                                    |
-| Lỗi `adb`                                    | `%LOCALAPPDATA%\Android\Sdk\platform-tools\adb kill-server` rồi `adb devices`                                              |
+| `'flutter' is not recognized` | Thêm thư mục `bin` của Flutter vào Path, đóng hẳn rồi mở lại CMD/VS Code |
+| `cmdline-tools component is missing` | Cài **Android SDK Command-line Tools** trong SDK Manager |
+| `Android sdkmanager did not install NDK ...` | Cài NDK đúng phiên bản (`28.2.13676358`) bằng Android Studio → SDK Manager → SDK Tools |
+| `flutter devices` không thấy điện thoại | Chọn chế độ USB **Truyền tệp**, bật Gỡ lỗi USB, chạy `adb kill-server` rồi `adb devices`, bấm **Cho phép** trên điện thoại |
+| Không thấy máy ảo | Mở máy ảo trong Device Manager trước, đợi vào màn hình chính rồi chạy lại `flutter devices` |
+| Build lỗi khó hiểu sau khi đổi thư viện | `flutter clean` rồi `flutter pub get` rồi `flutter run` |
+| Lỗi `adb` | `%LOCALAPPDATA%\Android\Sdk\platform-tools\adb kill-server` rồi `adb devices` |
 
-## 10. Quy trình làm việc với Git (gợi ý)
+## 10. Làm việc với Git và GitHub
+
+Repo: https://github.com/haidu349/app_quan_ly_lich_mobile
+
+### 10.1. Cài đặt Git lần đầu trên một máy
+
+```bash
+git config --global user.name "Tên của bạn"
+git config --global user.email "email-đăng-ký-github@example.com"
+git config --global --list        # kiểm tra lại
+```
+
+### 10.2. Đưa dự án mới lên GitHub lần đầu (đã làm một lần)
+
+1. Tạo repo trống trên GitHub (không tick README/.gitignore/license).
+2. Trong thư mục dự án:
 
 ```bash
 git init
 git add .
-git commit -m "Mô tả ngắn thay đổi"
+git commit -m "Khởi tạo dự án"
+git branch -M main
+git remote add origin https://github.com/haidu349/app_quan_ly_lich_mobile.git
+git push -u origin main
 ```
 
+Lần push đầu sẽ mở trình duyệt để đăng nhập GitHub. Không dùng mật khẩu tài khoản trong terminal.
+
+### 10.3. Lấy dự án về máy mới (clone)
+
+Cài đủ môi trường ở **mục 4** trước (Git, Flutter, Android Studio, NDK), sau đó:
+
+```bash
+cd C:\Users\<tên-người-dùng>\Documents
+git clone https://github.com/haidu349/app_quan_ly_lich_mobile.git
+cd app_quan_ly_lich_mobile
+flutter pub get
+code .
+```
+
+- `git clone` tạo thư mục mới tên `app_quan_ly_lich_mobile` chứa toàn bộ mã nguồn và lịch sử commit.
+- `flutter pub get` bắt buộc chạy sau khi clone, vì thư mục thư viện không được đưa lên Git.
+- Nếu repo ở chế độ **Private**, đăng nhập đúng tài khoản `haidu349` khi trình duyệt hiện cửa sổ xác thực.
+- Sau đó mở máy ảo (hoặc cắm điện thoại), chạy `flutter devices` và `flutter run -d <mã-thiết-bị>` như **mục 6**.
+
+> Dữ liệu sự kiện trong SQLite **không** nằm trong Git, nên máy mới sẽ bắt đầu với danh sách trống.
+
+### 10.4. Cập nhật code từ GitHub về máy đã có dự án (pull)
+
+Dùng khi bạn đã sửa code ở máy khác rồi push lên, hoặc khi muốn đồng bộ lại:
+
+```bash
+cd đường-dẫn-tới-dự-án
+git status                # xem có thay đổi chưa commit không
+git pull                  # kéo code mới nhất về nhánh hiện tại
+flutter pub get           # nếu pubspec.yaml có thay đổi
+```
+
+- Nếu `git status` báo có thay đổi chưa commit, hãy **commit hoặc cất tạm (`git stash`)** trước khi `git pull`, tránh xung đột.
+- Nếu `git pull` báo xung đột (conflict), mở các file bị đánh dấu `<<<<<<<`, chọn đoạn cần giữ, lưu lại rồi `git add .` và `git commit`.
+
+### 10.5. Quy trình hằng ngày
+
+```bash
+git status                          # xem file nào đã thay đổi
+git add .                           # đưa tất cả thay đổi vào vùng chuẩn bị
+git commit -m "Mô tả ngắn thay đổi"  # lưu một bản ghi
+git push                            # đẩy lên GitHub
+```
+
+Trước khi bắt đầu làm việc ở máy đã có dự án: `git pull` để lấy bản mới nhất.
+
+Quy tắc commit:
+
 - Commit sau mỗi tính năng nhỏ chạy được (thêm, sửa, xóa, import...).
-- Flutter đã tạo sẵn `.gitignore`, không cần tự thêm `build/` hay `.dart_tool/`.
-- Nên tạo nhánh riêng cho mỗi tính năng lớn (`git checkout -b import-excel`) rồi gộp lại khi xong.
+- Viết thông điệp commit ngắn, rõ: "Thêm giờ bắt đầu cho sự kiện", "Sửa lỗi xóa sự kiện".
+- Chỉ commit khi app còn chạy được, để luôn có một bản đáng tin cậy để quay lại.
+
+### 10.6. Làm việc với nhánh (branch)
+
+Tạo nhánh riêng cho mỗi tính năng lớn để nhánh `main` luôn ổn định:
+
+```bash
+git checkout -b them-gio-su-kien     # tạo và chuyển sang nhánh mới
+# ... code, commit nhiều lần ...
+git push -u origin them-gio-su-kien   # đẩy nhánh lên GitHub (lần đầu)
+git checkout main                     # quay về nhánh chính
+git pull                              # cập nhật main
+git merge them-gio-su-kien            # gộp tính năng vào main
+git push                              # đẩy main lên GitHub
+git branch -d them-gio-su-kien        # xóa nhánh đã gộp (tùy chọn)
+```
+
+Các lệnh liên quan:
+
+```bash
+git branch                 # xem danh sách nhánh, dấu * là nhánh hiện tại
+git checkout <tên-nhánh>   # chuyển sang nhánh khác
+git log --oneline          # xem lịch sử commit gọn
+```
+
+### 10.7. Hoàn tác khi gặp sự cố
+
+| Tình huống                                               | Lệnh                                       |
+| -------------------------------------------------------- | ------------------------------------------ |
+| Bỏ thay đổi chưa commit của **một file**                 | `git restore <đường-dẫn-file>`             |
+| Bỏ **toàn bộ** thay đổi chưa commit (không lấy lại được) | `git restore .`                            |
+| Bỏ file khỏi vùng chuẩn bị (đã `git add` nhầm)           | `git restore --staged <file>`              |
+| Sửa thông điệp commit **vừa tạo, chưa push**             | `git commit --amend -m "Thông điệp mới"`   |
+| Cất tạm thay đổi để chuyển nhánh                         | `git stash` rồi `git stash pop` để lấy lại |
+| Xem lại một thay đổi trước khi commit                    | `git diff`                                 |
+
+Lưu ý: tránh dùng `git push --force` và `git reset --hard` khi chưa hiểu rõ, vì chúng có thể xóa mất công việc không lấy lại được.
+
+### 10.8. Những thứ không đưa lên Git
+
+- Flutter đã tạo sẵn `.gitignore`, tự bỏ qua `build/`, `.dart_tool/` và các file sinh tự động. Không cần tự thêm.
+- **Không commit** thông tin nhạy cảm (mật khẩu, khóa API, file keystore ký APK).
+- Nếu lỡ tạo file rác trong thư mục dự án (ví dụ file `run`, `.flutter` do gõ nhầm lệnh), hãy xóa trước khi `git add .`.
+- File APK thành phẩm nên đính kèm ở mục **Releases** trên GitHub thay vì commit vào repo.
+
+### 10.9. Lỗi thường gặp với Git
+
+| Lỗi                                             | Cách xử lý                                                                                                                         |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `Repository not found`                          | Sai địa chỉ repo hoặc đăng nhập nhầm tài khoản. Kiểm tra bằng `git remote -v`, sửa bằng `git remote set-url origin <địa-chỉ-đúng>` |
+| `remote origin already exists`                  | Dùng `git remote set-url origin <địa-chỉ>` thay cho `git remote add`                                                               |
+| `rejected ... fetch first` / `non-fast-forward` | Trên GitHub có commit mà máy chưa có. Chạy `git pull` rồi `git push` lại                                                           |
+| `Please tell me who you are`                    | Chưa cấu hình tên/email, làm lại mục 10.1                                                                                          |
+| Cảnh báo `LF will be replaced by CRLF`          | Chuyện xuống dòng trên Windows, bỏ qua được                                                                                        |
+| `Authentication failed`                         | Đăng nhập lại GitHub qua trình duyệt khi Git yêu cầu, không nhập mật khẩu tài khoản vào terminal                                   |
 
 ## 11. Thông tin
 
