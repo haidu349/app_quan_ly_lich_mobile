@@ -28,10 +28,13 @@ class EventTile extends StatelessWidget {
           ),
           child: const Icon(Icons.delete, color: Colors.white),
         ),
-        onDismissed: (_) => deleteEventWithUndo(context, event),
+        // Hỏi xác nhận trước: trả về false thì thẻ trượt về chỗ cũ
+        confirmDismiss: (_) => confirmDeleteEvent(context, event),
+        onDismissed: (_) => deleteEventAndNotify(context, event),
         child: EventCard(
           event: event,
           label: data.labelOf(event),
+          hasConflict: data.hasConflict(event),
           onTap: () => openEventForm(context, event: event),
         ),
       ),

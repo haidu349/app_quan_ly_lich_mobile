@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:quan_ly_lich/models/event.dart';
 import 'package:quan_ly_lich/models/event_label.dart';
 import 'package:quan_ly_lich/providers/app_data.dart';
+import 'package:quan_ly_lich/services/conflict_service.dart';
 import 'package:quan_ly_lich/utils/format.dart';
 import 'package:quan_ly_lich/widgets/label_dialog.dart';
 
@@ -71,6 +72,34 @@ class _AddEventScreenState extends State<AddEventScreen> {
     super.dispose();
   }
 
+  // Dựng sự kiện từ các giá trị đang nhập (dùng cho cả kiểm tra trùng và lưu)
+  Event _buildEvent() {
+    final start = DateTime(
+      _date.year,
+      _date.month,
+      _date.day,
+      _startTime.hour,
+      _startTime.minute,
+    );
+    final end = DateTime(
+      _date.year,
+      _date.month,
+      _date.day,
+      _endTime.hour,
+      _endTime.minute,
+    );
+    return Event(
+      id: widget.event?.id, // giữ nguyên id khi sửa
+      name: _nameController.text.trim(),
+      start: start,
+      end: end,
+      labelId: _labelId,
+      organizer: _organizerController.text.trim(),
+      location: _locationController.text.trim(),
+      note: _noteController.text.trim(),
+    );
+  }
+
   Future<void> _addLabel() async {
     final data = context.read<AppData>();
     final result = await showDialog<EventLabel>(
@@ -120,40 +149,61 @@ class _AddEventScreenState extends State<AddEventScreen> {
     });
   }
 
-  void _save() {
+  Future<void> _save() async {
     if (!_formKey.currentState!.validate() || _timeInvalid) return;
 
-    final start = DateTime(
-      _date.year,
-      _date.month,
-      _date.day,
-      _startTime.hour,
-      _startTime.minute,
-    );
-    final end = DateTime(
-      _date.year,
-      _date.month,
-      _date.day,
-      _endTime.hour,
-      _endTime.minute,
-    );
+    final data = context.read<AppData>();
+    final event = _buildEvent();
+    final conflicts = findConflicts(event, data.events);
 
-    final event = Event(
-      id: widget.event?.id, // giữ nguyên id khi sửa
-      name: _nameController.text.trim(),
-      start: start,
-      end: end,
-      labelId: _labelId,
-      organizer: _organizerController.text.trim(),
-      location: _locationController.text.trim(),
-      note: _noteController.text.trim(),
-    );
+    if (conflicts.isNotEmpty) {
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          icon: const Icon(
+            Icons.warning_amber_rounded,
+            color: Color(0xFFE65100),
+            size: 32,
+          ),
+          title: const Text('Trùng lịch'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Khoảng giờ này đang trùng với ${conflicts.length} sự kiện:',
+                ),
+                const SizedBox(height: 8),
+                _ConflictList(conflicts: conflicts),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Quay lại sửa'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Vẫn lưu'),
+            ),
+          ],
+        ),
+      );
+      if (proceed != true || !mounted) return;
+    }
+
     Navigator.pop(context, event);
   }
 
   @override
   Widget build(BuildContext context) {
-    final labels = context.watch<AppData>().labels;
+    final data = context.watch<AppData>();
+    final labels = data.labels;
+    final conflicts = _timeInvalid
+        ? <Event>[]
+        : findConflicts(_buildEvent(), data.events);
 
     return Scaffold(
       appBar: AppBar(title: Text(_isEditing ? 'Sửa sự kiện' : 'Thêm sự kiện')),
@@ -250,6 +300,44 @@ class _AddEventScreenState extends State<AddEventScreen> {
                   ),
                 ),
               ),
+
+            // Cảnh báo trùng lịch (hiện ngay khi đổi ngày/giờ)
+            if (conflicts.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE65100).withValues(alpha: 0.10),
+                  border: Border.all(color: const Color(0xFFE65100)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.warning_amber_rounded,
+                          color: Color(0xFFE65100),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Trùng với ${conflicts.length} sự kiện',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFE65100),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    _ConflictList(conflicts: conflicts),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
 
             TextFormField(
@@ -284,6 +372,45 @@ class _AddEventScreenState extends State<AddEventScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+// Danh sách các sự kiện bị trùng (dùng trong cảnh báo và hộp thoại)
+class _ConflictList extends StatelessWidget {
+  final List<Event> conflicts;
+
+  const _ConflictList({required this.conflicts});
+
+  @override
+  Widget build(BuildContext context) {
+    final data = context.read<AppData>();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final e in conflicts)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 5),
+                  child: CircleAvatar(
+                    radius: 5,
+                    backgroundColor: data.labelOf(e)?.colorValue ?? Colors.grey,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${e.name}\n${formatDate(e.start)} • ${formatTimeRange(e.start, e.end)}',
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 }

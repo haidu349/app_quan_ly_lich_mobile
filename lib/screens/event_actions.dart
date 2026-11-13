@@ -27,19 +27,38 @@ Future<void> openEventForm(
   }
 }
 
-// Xóa sự kiện và hiện thanh "Hoàn tác"
-void deleteEventWithUndo(BuildContext context, Event event) {
-  final data = context.read<AppData>();
-  data.deleteEvent(event.id!);
-  ScaffoldMessenger.of(context)
-    ..clearSnackBars()
-    ..showSnackBar(
-      SnackBar(
-        content: Text('Đã xóa "${event.name}"'),
-        action: SnackBarAction(
-          label: 'Hoàn tác',
-          onPressed: () => data.addEvent(event),
-        ),
+// Hộp thoại hỏi lại trước khi xóa. Trả về true nếu người dùng bấm "Xóa".
+Future<bool> confirmDeleteEvent(BuildContext context, Event event) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      icon: const Icon(Icons.delete_outline, color: Colors.red, size: 32),
+      title: const Text('Xóa sự kiện?'),
+      content: Text(
+        'Bạn có chắc muốn xóa "${event.name}"?\nHành động này không thể hoàn tác.',
       ),
-    );
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Hủy'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: Colors.red),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Xóa'),
+        ),
+      ],
+    ),
+  );
+  return ok ?? false;
+}
+
+// Xóa sự kiện rồi hiện thông báo ngắn
+void deleteEventAndNotify(BuildContext context, Event event) {
+  final data = context.read<AppData>();
+  final messenger = ScaffoldMessenger.of(context);
+  data.deleteEvent(event.id!);
+  messenger
+    ..clearSnackBars()
+    ..showSnackBar(SnackBar(content: Text('Đã xóa "${event.name}"')));
 }

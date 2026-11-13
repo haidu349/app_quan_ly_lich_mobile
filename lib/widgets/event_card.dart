@@ -6,9 +6,16 @@ import 'package:quan_ly_lich/utils/format.dart';
 class EventCard extends StatelessWidget {
   final Event event;
   final EventLabel? label;
+  final bool hasConflict;
   final VoidCallback? onTap;
 
-  const EventCard({super.key, required this.event, this.label, this.onTap});
+  const EventCard({
+    super.key,
+    required this.event,
+    this.label,
+    this.hasConflict = false,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -29,27 +36,36 @@ class EventCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Chip nhãn
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircleAvatar(radius: 4, backgroundColor: color),
-                    const SizedBox(width: 6),
-                    Text(
-                      labelName,
-                      style: textTheme.labelMedium?.copyWith(
-                        color: color,
-                        fontWeight: FontWeight.w600,
-                      ),
+              Row(
+                children: [
+                  // Chip nhãn
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
                     ),
-                  ],
-                ),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircleAvatar(radius: 4, backgroundColor: color),
+                        const SizedBox(width: 6),
+                        Text(
+                          labelName,
+                          style: textTheme.labelMedium?.copyWith(
+                            color: color,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Spacer(),
+                  if (hasConflict) const _ConflictBadge(),
+                ],
               ),
               const SizedBox(height: 8),
               Text(
@@ -71,6 +87,34 @@ class EventCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ConflictBadge extends StatelessWidget {
+  const _ConflictBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    const color = Color(0xFFE65100);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.warning_amber_rounded, size: 14, color: color),
+          const SizedBox(width: 4),
+          Text(
+            'Trùng lịch',
+            style: Theme.of(context).textTheme.labelMedium
+                ?.copyWith(color: color, fontWeight: FontWeight.w600),
+          ),
+        ],
       ),
     );
   }

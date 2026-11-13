@@ -16,6 +16,13 @@ DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 DateTime _weekStart(DateTime d) =>
     DateTime(d.year, d.month, d.day - (d.weekday - 1));
 
+// Mọi kiểu ô trên lịch dùng chung một hình chữ nhật bo góc,
+// để hiệu ứng chuyển giữa các kiểu không bị lỗi.
+const BoxDecoration _cellShape = BoxDecoration(
+  shape: BoxShape.rectangle,
+  borderRadius: BorderRadius.all(Radius.circular(12)),
+);
+
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
 
@@ -267,17 +274,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     outsideDaysVisible: false,
                     cellMargin: const EdgeInsets.all(6),
                     weekendTextStyle: TextStyle(color: Colors.grey[600]),
-                    selectedDecoration: BoxDecoration(
+                    defaultDecoration: _cellShape,
+                    weekendDecoration: _cellShape,
+                    holidayDecoration: _cellShape,
+                    outsideDecoration: _cellShape,
+                    disabledDecoration: _cellShape,
+                    selectedDecoration: _cellShape.copyWith(
                       color: scheme.primary,
-                      borderRadius: BorderRadius.circular(12),
                     ),
                     selectedTextStyle: TextStyle(
                       color: scheme.onPrimary,
                       fontWeight: FontWeight.bold,
                     ),
-                    todayDecoration: BoxDecoration(
+                    todayDecoration: _cellShape.copyWith(
                       border: Border.all(color: scheme.primary, width: 1.5),
-                      borderRadius: BorderRadius.circular(12),
                     ),
                     todayTextStyle: TextStyle(
                       color: scheme.primary,
