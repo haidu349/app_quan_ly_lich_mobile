@@ -13,3 +13,9 @@ String formatTime(DateTime d) {
 String formatTimeRange(DateTime start, DateTime end) {
   return '${formatTime(start)} - ${formatTime(end)}';
 }
+
+const _weekdays = ['Th 2', 'Th 3', 'Th 4', 'Th 5', 'Th 6', 'Th 7', 'CN'];
+
+String formatWeekday(DateTime d) => _weekdays[d.weekday - 1];
+
+String formatDayHeader(DateTime d) => '${formatWeekday(d)}, ${formatDate(d)}';

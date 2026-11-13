@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:quan_ly_lich/models/event.dart';
 import 'package:quan_ly_lich/models/event_label.dart';
+import 'package:quan_ly_lich/providers/app_data.dart';
 import 'package:quan_ly_lich/utils/format.dart';
-import 'package:quan_ly_lich/database/database_helper.dart';
 import 'package:quan_ly_lich/widgets/label_dialog.dart';
 
 class AddEventScreen extends StatefulWidget {
   final Event? event; // null = thêm mới, có giá trị = đang sửa
-  final List<EventLabel> labels;
 
-  const AddEventScreen({super.key, this.event, required this.labels});
+  const AddEventScreen({super.key, this.event});
 
   @override
   State<AddEventScreen> createState() => _AddEventScreenState();
@@ -25,7 +25,6 @@ class _AddEventScreenState extends State<AddEventScreen> {
   late TimeOfDay _startTime;
   late TimeOfDay _endTime;
   int? _labelId;
-  late List<EventLabel> _labels;
 
   bool get _isEditing => widget.event != null;
 
@@ -41,7 +40,6 @@ class _AddEventScreenState extends State<AddEventScreen> {
   @override
   void initState() {
     super.initState();
-    _labels = List.of(widget.labels);
     final e = widget.event;
     _nameController = TextEditingController(text: e?.name ?? '');
     _organizerController = TextEditingController(text: e?.organizer ?? '');
@@ -55,10 +53,11 @@ class _AddEventScreenState extends State<AddEventScreen> {
       _labelId = e.labelId;
     } else {
       final now = DateTime.now();
+      final labels = context.read<AppData>().labels;
       _date = DateTime(now.year, now.month, now.day);
       _startTime = const TimeOfDay(hour: 8, minute: 0);
       _endTime = const TimeOfDay(hour: 9, minute: 0);
-      _labelId = _labels.isNotEmpty ? _labels.first.id : null;
+      _labelId = labels.isNotEmpty ? labels.first.id : null;
     }
   }
 
@@ -72,19 +71,16 @@ class _AddEventScreenState extends State<AddEventScreen> {
   }
 
   Future<void> _addLabel() async {
+    final data = context.read<AppData>();
     final result = await showDialog<EventLabel>(
       context: context,
       builder: (_) => const LabelDialog(),
     );
     if (result == null) return;
 
-    final newId = await DatabaseHelper.instance.insertLabel(result);
-    final labels = await DatabaseHelper.instance.getAllLabels();
+    final newId = await data.addLabel(result);
     if (!mounted) return;
-    setState(() {
-      _labels = labels;
-      _labelId = newId; // chọn luôn nhãn vừa tạo
-    });
+    setState(() => _labelId = newId); // chọn luôn nhãn vừa tạo
   }
 
   Future<void> _pickDate() async {
@@ -156,6 +152,8 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final labels = context.watch<AppData>().labels;
+
     return Scaffold(
       appBar: AppBar(title: Text(_isEditing ? 'Sửa sự kiện' : 'Thêm sự kiện')),
       body: Form(
@@ -188,7 +186,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
                   selected: _labelId == null,
                   onSelected: (_) => setState(() => _labelId = null),
                 ),
-                for (final l in _labels)
+                for (final l in labels)
                   ChoiceChip(
                     avatar: CircleAvatar(
                       backgroundColor: l.colorValue,

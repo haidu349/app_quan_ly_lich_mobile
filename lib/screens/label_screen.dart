@@ -1,35 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:quan_ly_lich/database/database_helper.dart';
+import 'package:provider/provider.dart';
 import 'package:quan_ly_lich/models/event_label.dart';
+import 'package:quan_ly_lich/providers/app_data.dart';
 import 'package:quan_ly_lich/widgets/label_dialog.dart';
 
-class LabelScreen extends StatefulWidget {
+class LabelScreen extends StatelessWidget {
   const LabelScreen({super.key});
 
-  @override
-  State<LabelScreen> createState() => _LabelScreenState();
-}
-
-class _LabelScreenState extends State<LabelScreen> {
-  List<EventLabel> _labels = [];
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final labels = await DatabaseHelper.instance.getAllLabels();
-    if (!mounted) return;
-    setState(() {
-      _labels = labels;
-      _loading = false;
-    });
-  }
-
-  Future<void> _openEditor({EventLabel? label}) async {
+  Future<void> _openEditor(BuildContext context, {EventLabel? label}) async {
+    final data = context.read<AppData>();
     final result = await showDialog<EventLabel>(
       context: context,
       builder: (_) => LabelDialog(label: label),
@@ -37,14 +16,14 @@ class _LabelScreenState extends State<LabelScreen> {
     if (result == null) return;
 
     if (label == null) {
-      await DatabaseHelper.instance.insertLabel(result);
+      await data.addLabel(result);
     } else {
-      await DatabaseHelper.instance.updateLabel(result);
+      await data.updateLabel(result);
     }
-    await _load();
   }
 
-  Future<void> _delete(EventLabel label) async {
+  Future<void> _delete(BuildContext context, EventLabel label) async {
+    final data = context.read<AppData>();
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -65,39 +44,38 @@ class _LabelScreenState extends State<LabelScreen> {
       ),
     );
     if (ok != true) return;
-    await DatabaseHelper.instance.deleteLabel(label.id!);
-    await _load();
+    await data.deleteLabel(label.id!);
   }
 
   @override
   Widget build(BuildContext context) {
+    final labels = context.watch<AppData>().labels;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Quản lý nhãn')),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _labels.isEmpty
+      body: labels.isEmpty
           ? const Center(child: Text('Chưa có nhãn nào'))
           : ListView.builder(
-              itemCount: _labels.length,
+              itemCount: labels.length,
               itemBuilder: (context, index) {
-                final label = _labels[index];
+                final label = labels[index];
                 return ListTile(
                   leading: CircleAvatar(
                     radius: 14,
                     backgroundColor: label.colorValue,
                   ),
                   title: Text(label.name),
-                  onTap: () => _openEditor(label: label),
+                  onTap: () => _openEditor(context, label: label),
                   trailing: IconButton(
                     icon: const Icon(Icons.delete_outline),
                     tooltip: 'Xóa nhãn',
-                    onPressed: () => _delete(label),
+                    onPressed: () => _delete(context, label),
                   ),
                 );
               },
             ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => _openEditor(),
+        onPressed: () => _openEditor(context),
         child: const Icon(Icons.add),
       ),
     );
