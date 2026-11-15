@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:quan_ly_lich/providers/app_data.dart';
 import 'package:quan_ly_lich/services/stats_service.dart';
 import 'package:quan_ly_lich/utils/format.dart';
+import 'package:quan_ly_lich/widgets/stacked_bar_chart.dart';
 
 enum _Range { week, month }
 
@@ -53,6 +54,68 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     });
   }
 
+  // Dựng biểu đồ cột chồng từ số liệu đã tính
+  Widget _buildChart(
+    PeriodStats stats,
+    List<int?> order,
+    Color Function(int?) colorOf,
+  ) {
+    final isHours = _metric == _Metric.hours;
+    final isWeek = _range == _Range.week;
+    final today = _dateOnly(DateTime.now());
+
+    // Tổng mỗi ngày (chiều cao cột) và trục Y gọn số nguyên
+    final totals = [
+      for (final d in stats.days)
+        isHours ? d.minutes / 60.0 : d.count.toDouble(),
+    ];
+    final rawMax = totals.fold<double>(0, (a, b) => math.max(a, b));
+    final interval = math.max(1, (rawMax / 4).ceil()).toDouble();
+    final maxY = math.max(interval, (rawMax / interval).ceil() * interval);
+
+    final items = <BarItem>[];
+    for (final d in stats.days) {
+      // Mỗi nhãn có mặt trong ngày là một đoạn màu
+      final segments = <BarSegment>[];
+      for (final id in order) {
+        final v = isHours
+            ? (d.minutesByLabel[id] ?? 0) / 60.0
+            : (d.countByLabel[id] ?? 0).toDouble();
+        if (v > 0) segments.add(BarSegment(v, colorOf(id)));
+      }
+
+      // Tuần: ghi thứ và ngày. Tháng: chỉ ghi ngày 1, 5, 10, 15...
+      final String label;
+      if (isWeek) {
+        label = '${formatWeekday(d.day)}\n${d.day.day}';
+      } else {
+        label = (d.day.day == 1 || d.day.day % 5 == 0) ? '${d.day.day}' : '';
+      }
+
+      items.add(
+        BarItem(
+          label: label,
+          segments: segments,
+          isToday: d.day == today,
+          tooltip:
+              '${formatDayHeader(d.day)}: ${d.minutes == 0 ? '0 giờ' : formatDuration(d.minutes)} • ${d.count} việc',
+        ),
+      );
+    }
+
+    return StackedBarChart(
+      // Đổi kỳ hoặc đơn vị thì tạo lại biểu đồ (bỏ chọn cột cũ)
+      key: ValueKey(
+        '${_range.name}-${_from.millisecondsSinceEpoch}-${_metric.name}',
+      ),
+      items: items,
+      maxY: maxY,
+      interval: interval,
+      height: 240,
+      barWidthFactor: isWeek ? 0.55 : 0.7,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = context.watch<AppData>();
@@ -61,6 +124,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       for (final l in data.labels) l.id: l.colorValue,
     };
     Color colorOf(int? id) => colorById[id] ?? Colors.grey;
+    // Thứ tự xếp chồng: theo thứ tự nhãn, "không nhãn" ở trên cùng
     final order = <int?>[for (final l in data.labels) l.id, null];
 
     final stats = computeStats(data.events, _from, _to);
@@ -213,15 +277,30 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                     ),
                   )
                 else ...[
-                  // Chỗ này sẽ là biểu đồ ở bước sau
+                  // Biểu đồ
                   Card(
                     margin: const EdgeInsets.symmetric(
                       horizontal: 12,
                       vertical: 8,
                     ),
-                    child: const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Center(child: Text('Biểu đồ sẽ thêm ở bước sau')),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 14, 12, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8, bottom: 4),
+                            child: Text(
+                              _metric == _Metric.hours
+                                  ? 'Số giờ mỗi ngày'
+                                  : 'Số việc mỗi ngày',
+                              style: Theme.of(context).textTheme.titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          _buildChart(stats, order, colorOf),
+                        ],
+                      ),
                     ),
                   ),
 
