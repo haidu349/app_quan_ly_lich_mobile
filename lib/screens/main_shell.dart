@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:quan_ly_lich/screens/calendar_screen.dart';
 import 'package:quan_ly_lich/screens/ledger_screen.dart';
-import 'package:quan_ly_lich/screens/placeholder_screen.dart';
 import 'package:quan_ly_lich/screens/settings_screen.dart';
+import 'package:quan_ly_lich/screens/statistics_screen.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -13,26 +13,38 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _index = 0; // mở app vào tab Lịch
+  final Set<int> _opened = {0}; // các tab đã từng được mở
 
-  final List<Widget> _pages = const [
-    CalendarScreen(),
-    LedgerScreen(),
-    PlaceholderScreen(
-      title: 'Thống kê',
-      icon: Icons.bar_chart,
-      message: 'Tab Thống kê sẽ làm ở bước sau',
-    ),
-    SettingsScreen(),
-  ];
+  Widget _page(int i) {
+    switch (i) {
+      case 0:
+        return const CalendarScreen();
+      case 1:
+        return const LedgerScreen();
+      case 2:
+        return const StatisticsScreen();
+      default:
+        return const SettingsScreen();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // IndexedStack giữ nguyên trạng thái từng tab khi chuyển qua lại
-      body: IndexedStack(index: _index, children: _pages),
+      // Tab nào chưa mở thì chưa dựng; đã mở thì giữ nguyên trạng thái
+      body: IndexedStack(
+        index: _index,
+        children: [
+          for (var i = 0; i < 4; i++)
+            _opened.contains(i) ? _page(i) : const SizedBox.shrink(),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
+        onDestinationSelected: (i) => setState(() {
+          _index = i;
+          _opened.add(i);
+        }),
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.calendar_month_outlined),
