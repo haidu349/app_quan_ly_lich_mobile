@@ -6,11 +6,14 @@ import 'package:quan_ly_lich/database/database_helper.dart';
 import 'package:quan_ly_lich/models/event.dart';
 import 'package:quan_ly_lich/models/event_label.dart';
 import 'package:quan_ly_lich/services/conflict_service.dart';
+import 'package:quan_ly_lich/services/reminder_planner.dart';
+import 'package:quan_ly_lich/services/reminder_service.dart';
 
 // Nơi giữ dữ liệu chung cho cả app. Khi dữ liệu đổi, gọi notifyListeners()
 // để mọi màn hình đang "nghe" tự vẽ lại.
 class AppData extends ChangeNotifier {
   final DatabaseHelper _db = DatabaseHelper.instance;
+  final ReminderService _reminders = ReminderService.instance;
 
   List<Event> _events = [];
   List<EventLabel> _labels = [];
@@ -18,6 +21,13 @@ class AppData extends ChangeNotifier {
   Set<int> _conflictIds = {}; // id các sự kiện đang trùng giờ với sự kiện khác
   bool _loading = true;
   Timer? _clock;
+
+  // Nhắc nhở
+  bool _reminderEnabled = true;
+  int _reminderMinute = kDefaultReminderMinute;
+  int _scheduledReminderCount = 0;
+  bool _syncing = false;
+  bool _syncAgain = false;
 
   AppData() {
     // Mỗi phút báo giao diện vẽ lại một lần, để các thẻ tự chuyển sang
@@ -37,6 +47,10 @@ class AppData extends ChangeNotifier {
   bool get loading => _loading;
   UnmodifiableListView<Event> get events => UnmodifiableListView(_events);
   UnmodifiableListView<EventLabel> get labels => UnmodifiableListView(_labels);
+
+  bool get reminderEnabled => _reminderEnabled;
+  int get reminderMinute => _reminderMinute;
+  int get scheduledReminderCount => _scheduledReminderCount;
 
   EventLabel? labelOf(Event event) {
     final id = event.labelId;
@@ -70,13 +84,73 @@ class AppData extends ChangeNotifier {
     _conflictIds = findConflictingIds(_events);
   }
 
+  Future<void> _loadReminderSettings() async {
+    final enabled = await _db.getSetting('reminder_enabled');
+    final minute = await _db.getSetting('reminder_minute');
+    _reminderEnabled = enabled != '0';
+    _reminderMinute = int.tryParse(minute ?? '') ?? kDefaultReminderMinute;
+  }
+
   // Gọi một lần khi mở app
   Future<void> load() async {
     await _db.deleteOlderThanOneYear(); // tự xóa dữ liệu quá 1 năm
     await _fetchLabels();
     await _fetchEvents();
+    await _loadReminderSettings();
     _loading = false;
     notifyListeners();
+
+    if (_reminderEnabled) await _reminders.ensurePermission();
+    await _syncReminders();
+  }
+
+  // ---------- Nhắc nhở ----------
+
+  // Hẹn lại toàn bộ thông báo theo dữ liệu hiện tại. Nếu đang hẹn dở mà có
+  // thay đổi mới thì chạy thêm một vòng nữa, tránh hai lần hẹn đè nhau.
+  Future<void> _syncReminders() async {
+    if (_syncing) {
+      _syncAgain = true;
+      return;
+    }
+    _syncing = true;
+    try {
+      do {
+        _syncAgain = false;
+        await _applyReminders();
+      } while (_syncAgain);
+    } finally {
+      _syncing = false;
+    }
+  }
+
+  Future<void> _applyReminders() async {
+    if (!_reminderEnabled) {
+      await _reminders.cancelAllPending();
+      _scheduledReminderCount = 0;
+    } else {
+      final plan = planReminders(
+        _events,
+        now: DateTime.now(),
+        minuteOfDay: _reminderMinute,
+      );
+      _scheduledReminderCount = await _reminders.reschedule(plan);
+    }
+    notifyListeners();
+  }
+
+  Future<void> setReminderEnabled(bool value) async {
+    _reminderEnabled = value;
+    notifyListeners();
+    await _db.setSetting('reminder_enabled', value ? '1' : '0');
+    await _syncReminders();
+  }
+
+  Future<void> setReminderMinute(int minute) async {
+    _reminderMinute = minute;
+    notifyListeners();
+    await _db.setSetting('reminder_minute', '$minute');
+    await _syncReminders();
   }
 
   // ---------- Sự kiện ----------
@@ -85,18 +159,21 @@ class AppData extends ChangeNotifier {
     await _db.insertEvent(event);
     await _fetchEvents();
     notifyListeners();
+    await _syncReminders();
   }
 
   Future<void> addEvents(List<Event> events) async {
     await _db.insertEvents(events);
     await _fetchEvents();
     notifyListeners();
+    await _syncReminders();
   }
 
   Future<void> updateEvent(Event event) async {
     await _db.updateEvent(event);
     await _fetchEvents();
     notifyListeners();
+    await _syncReminders();
   }
 
   // Bỏ khỏi danh sách ngay rồi mới xóa trong database,
@@ -106,6 +183,7 @@ class AppData extends ChangeNotifier {
     _conflictIds = findConflictingIds(_events);
     notifyListeners();
     await _db.deleteEvent(id);
+    await _syncReminders();
   }
 
   // ---------- Nhãn ----------

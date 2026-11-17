@@ -8,7 +8,7 @@ class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._();
 
   static Database? _db;
-  static const int _dbVersion = 2;
+  static const int _dbVersion = 3;
 
   Future<Database> get database async {
     _db ??= await _open();
@@ -30,10 +30,14 @@ class DatabaseHelper {
           'CREATE INDEX idx_events_start_time ON events(start_time)',
         );
         await _seedDefaultLabels(db);
+        await _createSettingsTable(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await _migrateV1ToV2(db);
+        }
+        if (oldVersion < 3) {
+          await _createSettingsTable(db);
         }
       },
     );
@@ -62,6 +66,16 @@ class DatabaseHelper {
         organizer TEXT NOT NULL DEFAULT '',
         location TEXT NOT NULL DEFAULT '',
         note TEXT NOT NULL DEFAULT ''
+      )
+    ''');
+  }
+
+  // Bảng lưu cài đặt dạng (khóa, giá trị)
+  Future<void> _createSettingsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS settings (
+        setting_key TEXT PRIMARY KEY,
+        setting_value TEXT NOT NULL
       )
     ''');
   }
@@ -95,6 +109,27 @@ class DatabaseHelper {
     await db.execute(
       'CREATE INDEX idx_events_start_time ON events(start_time)',
     );
+  }
+
+  // ---------- Cài đặt ----------
+
+  Future<String?> getSetting(String key) async {
+    final db = await database;
+    final rows = await db.query(
+      'settings',
+      where: 'setting_key = ?',
+      whereArgs: [key],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first['setting_value'] as String?;
+  }
+
+  Future<void> setSetting(String key, String value) async {
+    final db = await database;
+    await db.insert('settings', {
+      'setting_key': key,
+      'setting_value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   // ---------- Nhãn ----------
