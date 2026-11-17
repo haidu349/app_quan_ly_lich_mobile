@@ -87,6 +87,12 @@ class AppData extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> addEvents(List<Event> events) async {
+    await _db.insertEvents(events);
+    await _fetchEvents();
+    notifyListeners();
+  }
+
   Future<void> updateEvent(Event event) async {
     await _db.updateEvent(event);
     await _fetchEvents();

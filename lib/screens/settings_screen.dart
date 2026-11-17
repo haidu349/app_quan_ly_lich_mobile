@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:quan_ly_lich/screens/import_flow.dart';
 import 'package:quan_ly_lich/screens/label_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -20,11 +21,12 @@ class SettingsScreen extends StatelessWidget {
               MaterialPageRoute(builder: (_) => const LabelScreen()),
             ),
           ),
-          const ListTile(
-            enabled: false,
-            leading: Icon(Icons.upload_file),
-            title: Text('Nhập từ file Excel'),
-            subtitle: Text('Sắp có'),
+          ListTile(
+            leading: const Icon(Icons.upload_file),
+            title: const Text('Nhập từ file Excel'),
+            subtitle: const Text('Xem trước, báo lỗi và dời lịch bị trùng'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => startExcelImport(context),
           ),
           const ListTile(
             enabled: false,

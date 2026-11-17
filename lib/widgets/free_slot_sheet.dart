@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:quan_ly_lich/models/event.dart';
 import 'package:quan_ly_lich/providers/app_data.dart';
 import 'package:quan_ly_lich/services/free_slot_service.dart';
 import 'package:quan_ly_lich/utils/format.dart';
@@ -18,11 +19,14 @@ String _hm(int minuteOfDay) =>
     '${(minuteOfDay ~/ 60).toString().padLeft(2, '0')}:${(minuteOfDay % 60).toString().padLeft(2, '0')}';
 
 // Mở bảng gợi ý. Trả về khoảng trống người dùng chọn (hoặc null nếu đóng bảng).
+// extraEvents: các sự kiện chưa lưu vào app (ví dụ các dòng đang chờ nhập từ Excel)
+// nhưng vẫn cần tránh khi tìm chỗ trống.
 Future<FreeSlot?> showFreeSlotSheet(
   BuildContext context, {
   required DateTime initialDay,
   required int durationMinutes,
   int? ignoreEventId,
+  List<Event> extraEvents = const [],
 }) {
   return showModalBottomSheet<FreeSlot>(
     context: context,
@@ -35,6 +39,7 @@ Future<FreeSlot?> showFreeSlotSheet(
         initialDay: initialDay,
         durationMinutes: durationMinutes,
         ignoreEventId: ignoreEventId,
+        extraEvents: extraEvents,
       ),
     ),
   );
@@ -44,11 +49,13 @@ class _FreeSlotSheet extends StatefulWidget {
   final DateTime initialDay;
   final int durationMinutes;
   final int? ignoreEventId;
+  final List<Event> extraEvents;
 
   const _FreeSlotSheet({
     required this.initialDay,
     required this.durationMinutes,
     this.ignoreEventId,
+    this.extraEvents = const [],
   });
 
   @override
@@ -97,10 +104,11 @@ class _FreeSlotSheetState extends State<_FreeSlotSheet> {
     final data = context.watch<AppData>();
     final textTheme = Theme.of(context).textTheme;
 
+    final events = <Event>[...data.events, ...widget.extraEvents];
     final all = availabilityForRange(
       _from,
       _to,
-      data.events,
+      events,
       durationMinutes: widget.durationMinutes,
       ignoreEventId: widget.ignoreEventId,
     );

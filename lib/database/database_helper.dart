@@ -141,6 +141,18 @@ class DatabaseHelper {
     await db.insert('events', event.toMap()..remove('id'));
   }
 
+  // Thêm nhiều sự kiện trong một giao dịch: lỗi giữa chừng thì không ghi dở
+  Future<void> insertEvents(List<Event> events) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final e in events) {
+        batch.insert('events', e.toMap()..remove('id'));
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
   Future<void> updateEvent(Event event) async {
     final db = await database;
     await db.update(
