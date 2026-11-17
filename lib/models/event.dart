@@ -19,6 +19,20 @@ class Event {
     this.note = '',
   });
 
+  // Bản sao với tên và giờ mới (các trường khác giữ nguyên)
+  Event copyWith({String? name, DateTime? start, DateTime? end}) {
+    return Event(
+      id: id,
+      name: name ?? this.name,
+      start: start ?? this.start,
+      end: end ?? this.end,
+      labelId: labelId,
+      organizer: organizer,
+      location: location,
+      note: note,
+    );
+  }
+
   Map<String, Object?> toMap() {
     return {
       'id': id,

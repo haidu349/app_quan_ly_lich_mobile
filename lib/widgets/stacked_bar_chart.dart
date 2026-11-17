@@ -27,7 +27,7 @@ class BarItem {
   double get total => segments.fold(0.0, (s, e) => s + e.value);
 }
 
-// Biểu đồ cột chồng tự vẽ bằng widget cơ bản của Flutter
+// Biểu đồ cột chồng. Mọi thành phần đặt bằng vị trí tính sẵn trong một Stack.
 class StackedBarChart extends StatefulWidget {
   final List<BarItem> items;
   final double maxY; // giá trị lớn nhất của trục Y
@@ -50,7 +50,8 @@ class StackedBarChart extends StatefulWidget {
 
 class _StackedBarChartState extends State<StackedBarChart> {
   static const double _yAxisWidth = 30;
-  static const double _labelHeight = 36;
+  static const double _labelHeight = 36; // dải chữ dưới chân cột
+  static const double _topPad = 10; // chừa chỗ cho số trên cùng của trục Y
 
   int? _selected; // cột đang được chạm
 
@@ -62,8 +63,12 @@ class _StackedBarChartState extends State<StackedBarChart> {
 
     // Các vạch trên trục Y: 0, interval, 2*interval, ... đến maxY
     final ticks = <double>[];
-    for (var v = 0.0; v <= widget.maxY + 0.0001; v += widget.interval) {
-      ticks.add(v);
+    if (widget.interval > 0) {
+      for (var v = 0.0; v <= widget.maxY + 0.0001; v += widget.interval) {
+        ticks.add(v);
+      }
+    } else {
+      ticks.add(0);
     }
 
     final sel = _selected;
@@ -90,11 +95,19 @@ class _StackedBarChartState extends State<StackedBarChart> {
           ),
         ),
         SizedBox(
+          width: double.infinity,
           height: widget.height,
           child: LayoutBuilder(
-            builder: (context, constraints) {
-              // Chiều cao vùng chứa các cột (trừ dải chữ phía dưới)
-              final plotH = constraints.maxHeight - _labelHeight;
+            builder: (context, c) {
+              final plotH = math.max(0.0, c.maxHeight - _labelHeight - _topPad);
+              final plotW = math.max(0.0, c.maxWidth - _yAxisWidth);
+              final n = widget.items.length;
+              final slotW = n == 0 ? 0.0 : plotW / n;
+              final barW = slotW * widget.barWidthFactor;
+
+              // Chiều cao (pixel) ứng với giá trị v
+              double h(double v) =>
+                  widget.maxY <= 0 ? 0.0 : plotH * (v / widget.maxY);
 
               return Stack(
                 children: [
@@ -103,14 +116,15 @@ class _StackedBarChartState extends State<StackedBarChart> {
                     Positioned(
                       left: _yAxisWidth,
                       right: 0,
-                      bottom: _labelHeight + plotH * (v / widget.maxY),
-                      child: Container(height: 1, color: gridColor),
+                      bottom: _labelHeight + h(v),
+                      height: 1,
+                      child: ColoredBox(color: gridColor),
                     ),
                     Positioned(
                       left: 0,
                       width: _yAxisWidth - 6,
+                      bottom: _labelHeight + h(v) - 8,
                       height: 16,
-                      bottom: _labelHeight + plotH * (v / widget.maxY) - 8,
                       child: Align(
                         alignment: Alignment.centerRight,
                         child: Text(
@@ -123,20 +137,9 @@ class _StackedBarChartState extends State<StackedBarChart> {
                       ),
                     ),
                   ],
-
                   // Các cột
-                  Positioned(
-                    left: _yAxisWidth,
-                    right: 0,
-                    top: 0,
-                    bottom: 0,
-                    child: Row(
-                      children: [
-                        for (var i = 0; i < widget.items.length; i++)
-                          Expanded(child: _buildColumn(i, plotH, scheme)),
-                      ],
-                    ),
-                  ),
+                  for (var i = 0; i < n; i++)
+                    ..._bar(i, slotW, barW, h, scheme),
                 ],
               );
             },
@@ -146,74 +149,102 @@ class _StackedBarChartState extends State<StackedBarChart> {
     );
   }
 
-  Widget _buildColumn(int i, double plotH, ColorScheme scheme) {
+  List<Widget> _bar(
+    int i,
+    double slotW,
+    double barW,
+    double Function(double) h,
+    ColorScheme scheme,
+  ) {
     final item = widget.items[i];
     final selected = _selected == i;
-    final barH = widget.maxY <= 0 ? 0.0 : plotH * (item.total / widget.maxY);
+    final slotLeft = _yAxisWidth + i * slotW;
+    final barLeft = slotLeft + (slotW - barW) / 2;
+    final parts = <Widget>[];
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => setState(() => _selected = selected ? null : i),
-      child: Container(
-        decoration: BoxDecoration(
-          color: selected ? scheme.primary.withValues(alpha: 0.08) : null,
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Column(
-          children: [
-            // Vùng vẽ cột, cột dính đáy
-            Expanded(
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: barH <= 0
-                    ? const SizedBox.shrink()
-                    : FractionallySizedBox(
-                        widthFactor: widget.barWidthFactor,
-                        child: SizedBox(
-                          height: barH,
-                          child: ClipRRect(
-                            borderRadius: const BorderRadius.vertical(
-                              top: Radius.circular(4),
-                            ),
-                            // Column xếp từ trên xuống nên đảo ngược để đoạn
-                            // đầu tiên nằm dưới đáy cột
-                            child: Column(
-                              children: [
-                                for (final seg in item.segments.reversed)
-                                  Expanded(
-                                    flex: math.max(
-                                      1,
-                                      (seg.value * 1000).round(),
-                                    ),
-                                    child: ColoredBox(color: seg.color),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-              ),
+    // Nền sáng nhẹ khi cột được chọn
+    parts.add(
+      Positioned(
+        left: slotLeft,
+        width: slotW,
+        top: 0,
+        bottom: 0,
+        child: IgnorePointer(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: selected
+                  ? scheme.primary.withValues(alpha: 0.08)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(6),
             ),
-            // Chữ dưới chân cột
-            SizedBox(
-              height: _labelHeight,
-              child: Center(
-                child: Text(
-                  item.label,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: item.isToday ? scheme.primary : Colors.grey[700],
-                    fontWeight: item.isToday
-                        ? FontWeight.bold
-                        : FontWeight.normal,
-                  ),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
+
+    // Các đoạn màu xếp chồng từ đáy lên
+    var acc = 0.0;
+    for (var k = 0; k < item.segments.length; k++) {
+      final seg = item.segments[k];
+      final isTop = k == item.segments.length - 1;
+      final segH = h(seg.value);
+      if (segH > 0) {
+        parts.add(
+          Positioned(
+            left: barLeft,
+            width: barW,
+            bottom: _labelHeight + h(acc),
+            height: segH,
+            child: IgnorePointer(
+              child: ClipRRect(
+                borderRadius: isTop
+                    ? const BorderRadius.vertical(top: Radius.circular(4))
+                    : BorderRadius.zero,
+                child: ColoredBox(color: seg.color),
+              ),
+            ),
+          ),
+        );
+      }
+      acc += seg.value;
+    }
+
+    // Chữ dưới chân cột
+    parts.add(
+      Positioned(
+        left: slotLeft,
+        width: slotW,
+        bottom: 0,
+        height: _labelHeight,
+        child: IgnorePointer(
+          child: Center(
+            child: Text(
+              item.label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11,
+                color: item.isToday ? scheme.primary : Colors.grey[700],
+                fontWeight: item.isToday ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // Vùng chạm phủ cả khe của cột (đặt trên cùng)
+    parts.add(
+      Positioned(
+        left: slotLeft,
+        width: slotW,
+        top: 0,
+        bottom: 0,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => setState(() => _selected = selected ? null : i),
+        ),
+      ),
+    );
+    return parts;
   }
 }

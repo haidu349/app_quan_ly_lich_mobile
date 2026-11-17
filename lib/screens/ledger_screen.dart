@@ -17,14 +17,19 @@ class LedgerScreen extends StatefulWidget {
 }
 
 class _LedgerScreenState extends State<LedgerScreen> {
+  static const Key _centerKey = Key('ledger_upcoming');
+
   final _searchController = TextEditingController();
+  final _scroll = ScrollController();
   String _query = '';
   int _labelFilter = _filterAll; // _filterAll, _filterNone hoặc id của nhãn
   int? _yearFilter; // null = tất cả các năm
+  bool _hidePast = false; // ẩn lịch đã qua
 
   @override
   void dispose() {
     _searchController.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -35,6 +40,15 @@ class _LedgerScreenState extends State<LedgerScreen> {
       _labelFilter = _filterAll;
       _yearFilter = null;
     });
+  }
+
+  void _goToToday() {
+    if (!_scroll.hasClients) return;
+    _scroll.animateTo(
+      0,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeInOut,
+    );
   }
 
   List<Event> _applyFilters(List<Event> all, int? year, int labelFilter) {
@@ -67,6 +81,11 @@ class _LedgerScreenState extends State<LedgerScreen> {
     return items;
   }
 
+  Widget _buildItem(Object item) {
+    if (item is DateTime) return DayHeader(day: item);
+    return EventTile(event: item as Event);
+  }
+
   Widget _chipPadding(Widget chip) =>
       Padding(padding: const EdgeInsets.only(right: 8), child: chip);
 
@@ -83,13 +102,36 @@ class _LedgerScreenState extends State<LedgerScreen> {
 
     final filtered = _applyFilters(data.events, yearValue, labelFilter);
     final items = _buildItems(filtered);
+
+    // Tách thành "đã qua" (trước hôm nay) và "sắp tới" (từ hôm nay trở đi)
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final split = items.indexWhere((x) => x is DateTime && !x.isBefore(today));
+    final splitAt = split == -1 ? items.length : split;
+    final past = items.sublist(0, splitAt);
+    final upcoming = items.sublist(splitAt);
+    // Phần trên điểm giữa được bày ngược: phần tử đầu nằm sát điểm giữa nhất
+    final pastReversed = past.reversed.toList();
+
+    final shownCount = _hidePast
+        ? upcoming.whereType<Event>().length
+        : filtered.length;
     final hasFilter =
         _query.trim().isNotEmpty ||
         yearValue != null ||
         labelFilter != _filterAll;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Sổ cái')),
+      appBar: AppBar(
+        title: const Text('Sổ cái'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.today),
+            tooltip: 'Về hôm nay',
+            onPressed: _goToToday,
+          ),
+        ],
+      ),
       body: data.loading
           ? const Center(child: CircularProgressIndicator())
           : Column(
@@ -138,13 +180,21 @@ class _LedgerScreenState extends State<LedgerScreen> {
                   ),
                 ),
 
-                // Chip lọc theo nhãn
+                // Chip: ẩn lịch đã qua + lọc theo nhãn
                 SizedBox(
                   height: 52,
                   child: ListView(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     children: [
+                      _chipPadding(
+                        FilterChip(
+                          avatar: const Icon(Icons.history, size: 18),
+                          label: const Text('Ẩn lịch đã qua'),
+                          selected: _hidePast,
+                          onSelected: (v) => setState(() => _hidePast = v),
+                        ),
+                      ),
                       _chipPadding(
                         ChoiceChip(
                           label: const Text('Tất cả'),
@@ -185,7 +235,7 @@ class _LedgerScreenState extends State<LedgerScreen> {
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      '${filtered.length} sự kiện',
+                      '$shownCount sự kiện',
                       style: Theme.of(context).textTheme.bodySmall
                           ?.copyWith(color: Colors.grey[700]),
                     ),
@@ -212,14 +262,41 @@ class _LedgerScreenState extends State<LedgerScreen> {
                             ],
                           ),
                         )
-                      : ListView.builder(
-                          padding: const EdgeInsets.only(bottom: 88),
-                          itemCount: items.length,
-                          itemBuilder: (context, index) {
-                            final item = items[index];
-                            if (item is DateTime) return DayHeader(day: item);
-                            return EventTile(event: item as Event);
-                          },
+                      : CustomScrollView(
+                          controller: _scroll,
+                          center: _centerKey,
+                          slivers: [
+                            // Lịch đã qua: nằm phía trên điểm 0, kéo xuống để xem
+                            if (!_hidePast && pastReversed.isNotEmpty)
+                              SliverList(
+                                delegate: SliverChildBuilderDelegate(
+                                  (context, i) => _buildItem(pastReversed[i]),
+                                  childCount: pastReversed.length,
+                                ),
+                              ),
+                            // Lịch từ hôm nay trở đi: màn hình mở ra ở đây
+                            if (upcoming.isEmpty)
+                              const SliverToBoxAdapter(
+                                key: _centerKey,
+                                child: Padding(
+                                  padding: EdgeInsets.all(24),
+                                  child: Center(
+                                    child: Text('Không có lịch sắp tới'),
+                                  ),
+                                ),
+                              )
+                            else
+                              SliverList(
+                                key: _centerKey,
+                                delegate: SliverChildBuilderDelegate(
+                                  (context, i) => _buildItem(upcoming[i]),
+                                  childCount: upcoming.length,
+                                ),
+                              ),
+                            const SliverToBoxAdapter(
+                              child: SizedBox(height: 88),
+                            ),
+                          ],
                         ),
                 ),
               ],
