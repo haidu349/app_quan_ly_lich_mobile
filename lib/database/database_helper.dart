@@ -132,6 +132,24 @@ class DatabaseHelper {
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
+  // Thay toàn bộ nhãn và sự kiện trong một giao dịch (khôi phục sao lưu):
+  // lỗi giữa chừng thì dữ liệu cũ vẫn còn nguyên.
+  Future<void> replaceAll(List<EventLabel> labels, List<Event> events) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('events');
+      await txn.delete('labels');
+      for (final l in labels) {
+        await txn.insert('labels', l.toMap());
+      }
+      final batch = txn.batch();
+      for (final e in events) {
+        batch.insert('events', e.toMap());
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
   // ---------- Nhãn ----------
 
   Future<List<EventLabel>> getAllLabels() async {

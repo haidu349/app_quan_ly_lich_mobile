@@ -4,7 +4,7 @@ Flutter/Dart mobile app (Android is the real target) for personal schedule manag
 
 ## Commands
 
-- Verify: `flutter analyze` then `flutter test` (both currently clean; 79 tests in `test/`).
+- Verify: `flutter analyze` then `flutter test` (both currently clean; 85 tests in `test/`).
 - One test file: `flutter test test/conflict_service_test.dart`
 - Run: `flutter run -d <device-id>` (see `flutter devices`). After editing `pubspec.yaml` or adding packages, stop and rerun; hot reload is not enough.
 - `flutter run -d chrome` only shows UI; `sqflite` does not work on web.

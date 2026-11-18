@@ -1,6 +1,10 @@
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:quan_ly_lich/providers/app_data.dart';
+import 'package:quan_ly_lich/services/backup_service.dart';
 import 'package:quan_ly_lich/screens/import_flow.dart';
 import 'package:quan_ly_lich/screens/label_screen.dart';
 import 'package:quan_ly_lich/services/reminder_planner.dart';
@@ -68,6 +72,60 @@ class _SettingsScreenState extends State<SettingsScreen>
       }
     }
     await saving;
+  }
+
+  Future<void> _backup() async {
+    final d = DateTime.now();
+    final stamp =
+        '${d.year}${d.month.toString().padLeft(2, '0')}${d.day.toString().padLeft(2, '0')}';
+    try {
+      final saved = await FilePicker.saveFile(
+        fileName: 'sao_luu_lich_$stamp.json',
+        bytes: utf8.encode(context.read<AppData>().exportBackup()),
+        mimeType: 'application/json',
+        dialogTitle: 'Lưu file sao lưu',
+      );
+      if (saved != null) _snack('Đã lưu file sao lưu');
+    } catch (e) {
+      _snack('Không lưu được: $e');
+    }
+  }
+
+  Future<void> _restore() async {
+    final data = context.read<AppData>();
+    try {
+      final file = await FilePicker.pickFile();
+      if (file == null) return;
+      final backup = decodeBackup(utf8.decode(await file.readAsBytes()));
+      if (!mounted) return;
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Khôi phục từ sao lưu?'),
+          content: Text(
+            'File có ${backup.events.length} sự kiện và ${backup.labels.length} nhãn. '
+            'Toàn bộ lịch và nhãn hiện tại sẽ bị thay bằng nội dung file.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Hủy'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Khôi phục'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      await data.restoreBackup(backup);
+      _snack('Đã khôi phục ${backup.events.length} sự kiện');
+    } on FormatException catch (e) {
+      _snack('File không dùng được: ${e.message}');
+    } catch (e) {
+      _snack('Không khôi phục được: $e');
+    }
   }
 
   Future<void> _pickTime() async {
@@ -153,6 +211,18 @@ class _SettingsScreenState extends State<SettingsScreen>
             subtitle: const Text('Xem trước, báo lỗi và dời lịch bị trùng'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => startExcelImport(context),
+          ),
+          ListTile(
+            leading: const Icon(Icons.save_alt),
+            title: const Text('Sao lưu ra file'),
+            subtitle: const Text('Lưu toàn bộ lịch và nhãn thành file .json'),
+            onTap: _backup,
+          ),
+          ListTile(
+            leading: const Icon(Icons.restore),
+            title: const Text('Khôi phục từ file sao lưu'),
+            subtitle: const Text('Thay toàn bộ lịch hiện tại bằng file đã lưu'),
+            onTap: _restore,
           ),
           const Divider(),
           _SectionTitle('Nhắc nhở hằng ngày'),

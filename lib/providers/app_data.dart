@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:quan_ly_lich/database/database_helper.dart';
 import 'package:quan_ly_lich/models/event.dart';
 import 'package:quan_ly_lich/models/event_label.dart';
+import 'package:quan_ly_lich/services/backup_service.dart';
 import 'package:quan_ly_lich/services/conflict_service.dart';
 import 'package:quan_ly_lich/services/reminder_planner.dart';
 import 'package:quan_ly_lich/services/reminder_service.dart';
@@ -161,6 +162,18 @@ class AppData extends ChangeNotifier {
     _reminderMinute = minute;
     notifyListeners();
     await _db.setSetting('reminder_minute', '$minute');
+    await _syncReminders();
+  }
+
+  // ---------- Sao lưu ----------
+
+  String exportBackup() => encodeBackup(_labels, _events);
+
+  Future<void> restoreBackup(BackupData data) async {
+    await _db.replaceAll(data.labels, data.events);
+    await _fetchLabels();
+    await _fetchEvents();
+    notifyListeners();
     await _syncReminders();
   }
 
