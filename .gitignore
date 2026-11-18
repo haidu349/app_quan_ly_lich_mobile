@@ -46,3 +46,10 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Graphify generated graph
+/graphify-out/
+
+# OpenCode / Serena (c?c b?)
+/.serena/
+/opencode.json
