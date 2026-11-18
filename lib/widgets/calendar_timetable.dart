@@ -85,6 +85,9 @@ class _CalendarTimetableState extends State<CalendarTimetable> {
   late int _page;
   double _bodyW = 1; // bề rộng vùng các trang (không gồm cột giờ)
   double _colW = 1; // bề rộng một cột ngày
+  // Chiều cao vùng cuộn, lấy từ LayoutBuilder. Không đọc context.size trong
+  // build vì sẽ báo lỗi "Cannot get size during build".
+  double _viewportH = 400;
 
   _Active? _active;
   bool _committing = false;
@@ -106,6 +109,15 @@ class _CalendarTimetableState extends State<CalendarTimetable> {
   double _autoVelocity = 0;
   Timer? _edgeTimer;
   int _edgeDir = 0;
+
+  // Khi kéo/thả, chỉ các lớp phủ cần vẽ lại. Tăng giá trị này thay vì gọi
+  // setState() trên toàn widget, nếu không cả bảng giờ sẽ bị dựng lại mỗi frame.
+  final ValueNotifier<int> _frame = ValueNotifier<int>(0);
+
+  // Cache kết quả tìm lịch trùng theo (giờ, id, danh sách sự kiện) để không
+  // phải duyệt lại toàn bộ sự kiện ở mỗi chuyển động của ngón tay.
+  int? _conflictKey;
+  List<Event>? _conflictCache;
 
   bool get _isWeek => widget.mode == TimetableMode.week;
   int get _cols => _isWeek ? 7 : 1;
@@ -157,6 +169,7 @@ class _CalendarTimetableState extends State<CalendarTimetable> {
     _stopAuto();
     _pages.dispose();
     _vScroll.dispose();
+    _frame.dispose();
     super.dispose();
   }
 
@@ -185,6 +198,27 @@ class _CalendarTimetableState extends State<CalendarTimetable> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) widget.onSelectionChanged?.call(has);
     });
+  }
+
+  // Tìm lịch trùng cho khối đang chọn. Kết quả được nhớ theo thời gian + danh
+  // sách sự kiện để không phải duyệt lại trên từng frame lúc kéo/giãn.
+  List<Event> _conflictsFor(DateTime start, DateTime end, int? id) {
+    final key = Object.hash(
+      identityHashCode(widget.events),
+      widget.events.length,
+      start.millisecondsSinceEpoch,
+      end.millisecondsSinceEpoch,
+      id,
+    );
+    final cached = _conflictCache;
+    if (_conflictKey == key && cached != null) return cached;
+    final result = findConflicts(
+      Event(id: id, name: '', start: start, end: end),
+      widget.events,
+    );
+    _conflictKey = key;
+    _conflictCache = result;
+    return result;
   }
 
   // Đặt (hoặc bỏ) khối đang chọn; chỉ gọi từ các hàm xử lý cử chỉ
@@ -292,7 +326,7 @@ class _CalendarTimetableState extends State<CalendarTimetable> {
       final top = _topFor(a.start.hour * 60 + a.start.minute);
       final dur = a.end.difference(a.start).inMinutes;
       final bottom = top + math.max(_minBlockHeight, dur / 60 * _hourHeight);
-      final vh = _viewportKey.currentContext?.size?.height ?? 400.0;
+      final vh = _viewportH;
       final off = _vScroll.offset;
       double? target;
       if (top - 24 < off) {
@@ -355,7 +389,8 @@ class _CalendarTimetableState extends State<CalendarTimetable> {
       _beginMove();
     }
     if (!_armed && (e.position - _moveDown).distance > 24) _armed = true;
-    setState(() {});
+    // Chỉ vẽ lại lớp phủ đang kéo, không dựng lại cả bảng giờ.
+    _frame.value++;
     _updateAutoScroll(e.position, edges: true);
   }
 
@@ -506,7 +541,10 @@ class _CalendarTimetableState extends State<CalendarTimetable> {
       );
     }
     if (s != a.start || e != a.end) {
-      setState(() => _active = a.withTimes(s, e));
+      // Cập nhật trực tiếp rồi báo lớp phủ tự vẽ; setState() ở đây sẽ dựng
+      // lại toàn bộ PageView và các khối lịch trên mỗi chuyển động của tay.
+      _active = a.withTimes(s, e);
+      _frame.value++;
     }
   }
 
@@ -538,7 +576,7 @@ class _CalendarTimetableState extends State<CalendarTimetable> {
         if (_resizeEdge != 0) {
           _applyResize();
         } else {
-          setState(() {});
+          _frame.value++;
         }
       });
     }
@@ -727,6 +765,7 @@ class _CalendarTimetableState extends State<CalendarTimetable> {
         builder: (context, c) {
           _bodyW = math.max(1.0, c.maxWidth - _gutter);
           _colW = _bodyW / _cols;
+          if (c.hasBoundedHeight) _viewportH = c.maxHeight;
 
           return SingleChildScrollView(
             controller: _vScroll,
@@ -972,7 +1011,10 @@ class _CalendarTimetableState extends State<CalendarTimetable> {
       child: ClipRect(
         child: AnimatedBuilder(
           animation: _pages,
-          builder: (context, _) => _activeStack(scheme),
+          builder: (context, _) => ValueListenableBuilder<int>(
+            valueListenable: _frame,
+            builder: (context, _, _) => _activeStack(scheme),
+          ),
         ),
       ),
     );
@@ -1024,10 +1066,7 @@ class _CalendarTimetableState extends State<CalendarTimetable> {
 
     final src = a.source;
     final base = src != null ? widget.colorOf(src) : scheme.primary;
-    final conflict = findConflicts(
-      Event(id: src?.id, name: '', start: shownStart, end: shownEnd),
-      widget.events,
-    ).isNotEmpty;
+    final conflict = _conflictsFor(shownStart, shownEnd, src?.id).isNotEmpty;
 
     final body = _EagerPointer(
       onDown: _bodyDown,
@@ -1123,7 +1162,7 @@ class _CalendarTimetableState extends State<CalendarTimetable> {
 
   // Hai dải mờ ở mép trái/phải báo "kéo vào đây để sang trang khác"
   List<Widget> _edgeStrips(ColorScheme scheme) {
-    final vh = _viewportKey.currentContext?.size?.height ?? 400.0;
+    final vh = _viewportH;
     final off = _vScroll.hasClients ? _vScroll.offset : 0.0;
 
     Widget strip({required bool left}) {
@@ -1172,10 +1211,7 @@ class _CalendarTimetableState extends State<CalendarTimetable> {
     final src = a.source;
     final isDraft = src == null;
     final base = isDraft ? scheme.primary : widget.colorOf(src);
-    final conflicts = findConflicts(
-      Event(id: src?.id, name: '', start: a.start, end: a.end),
-      widget.events,
-    );
+    final conflicts = _conflictsFor(a.start, a.end, src?.id);
     final textTheme = Theme.of(context).textTheme;
 
     return Material(

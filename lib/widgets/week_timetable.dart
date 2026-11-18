@@ -109,6 +109,9 @@ class _WeekTimetableState extends State<WeekTimetable> {
   Event? _resizeEvent;
   double _resizeDy = 0;
 
+  // Lúc kéo chỉ lớp phủ cần vẽ lại, không dựng lại cả lưới 7 ngày.
+  final ValueNotifier<int> _frame = ValueNotifier<int>(0);
+
   @override
   void initState() {
     super.initState();
@@ -135,6 +138,7 @@ class _WeekTimetableState extends State<WeekTimetable> {
     _autoTimer?.cancel();
     _edgeTimer?.cancel();
     _scroll.dispose();
+    _frame.dispose();
     super.dispose();
   }
 
@@ -202,7 +206,7 @@ class _WeekTimetableState extends State<WeekTimetable> {
     _scrollAtFinger = _scrollOffset;
     if (!_armed && (_finger - _fingerStart).distance > 24) _armed = true;
     _updateAutoScrollAndEdges(d.globalPosition);
-    setState(() {});
+    _frame.value++;
   }
 
   void _onLongPressEnd(LongPressEndDetails d) => _endDrag();
@@ -251,7 +255,7 @@ class _WeekTimetableState extends State<WeekTimetable> {
             .clamp(0.0, _scroll.position.maxScrollExtent)
             .toDouble();
         _scroll.jumpTo(target);
-        if (mounted) setState(() {});
+        if (mounted) _frame.value++;
       });
     }
 
@@ -491,7 +495,12 @@ class _WeekTimetableState extends State<WeekTimetable> {
                         // Khối đang kéo, ô đích và dải báo mép
                         if (dragging) ...[
                           ..._edgeStrips(c.maxHeight, scheme),
-                          ..._buildDragOverlay(scheme),
+                          ValueListenableBuilder<int>(
+                            valueListenable: _frame,
+                            builder: (context, _, _) => Positioned.fill(
+                              child: Stack(children: _buildDragOverlay(scheme)),
+                            ),
+                          ),
                         ],
                       ],
                     ),
