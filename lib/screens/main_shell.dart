@@ -54,7 +54,7 @@ class _MainShellState extends State<MainShell> {
           NavigationDestination(
             icon: Icon(Icons.menu_book_outlined),
             selectedIcon: Icon(Icons.menu_book),
-            label: 'Sổ cái',
+            label: 'Danh sách',
           ),
           NavigationDestination(
             icon: Icon(Icons.bar_chart_outlined),

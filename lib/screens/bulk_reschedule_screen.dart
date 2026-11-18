@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:quan_ly_lich/models/event.dart';
 import 'package:quan_ly_lich/providers/app_data.dart';
+import 'package:quan_ly_lich/screens/bulk_board_screen.dart';
 import 'package:quan_ly_lich/screens/move_event_screen.dart';
 import 'package:quan_ly_lich/services/bulk_reschedule_service.dart';
 import 'package:quan_ly_lich/utils/format.dart';
@@ -46,12 +47,19 @@ class _BulkRescheduleScreenState extends State<BulkRescheduleScreen> {
     );
   }
 
-  // Đổi bất kỳ lựa chọn nào thì kết quả cũ không còn đúng nữa
+  // Đổi cách dời (lùi/sớm, số lượng...) thì giờ tự chọn cũ hết đúng, nhưng ô đã tích vẫn giữ
   void _change(VoidCallback fn) {
     setState(() {
       fn();
-      _skipped.clear();
       _manual.clear();
+    });
+  }
+
+  // Đổi khoảng ngày hoặc nhãn thì danh sách buổi đổi theo, nên tick làm lại từ đầu
+  void _changeSelection(VoidCallback fn) {
+    _change(() {
+      fn();
+      _skipped.clear();
     });
   }
 
@@ -64,7 +72,7 @@ class _BulkRescheduleScreenState extends State<BulkRescheduleScreen> {
       helpText: 'Chọn khoảng ngày cần dời',
     );
     if (picked == null || !mounted) return;
-    _change(() => _range = picked);
+    _changeSelection(() => _range = picked);
   }
 
   // Các buổi nằm trong khoảng ngày và bộ lọc nhãn (chưa tính bỏ tick)
@@ -108,6 +116,17 @@ class _BulkRescheduleScreenState extends State<BulkRescheduleScreen> {
     );
     if (result == null || !mounted) return;
     setState(() => _manual[id] = (start: result.start, end: result.end));
+  }
+
+  Future<void> _openBoard(List<BulkMove> plan) async {
+    final all = context.read<AppData>().events;
+    final result = await Navigator.push<BulkBoardResult>(
+      context,
+      MaterialPageRoute(builder: (_) => BulkBoardScreen(plan: plan)),
+    );
+    if (result == null || !mounted) return;
+    setState(() => _manual.addAll(result.overrides));
+    if (result.apply) await _apply(overrideMoves(plan, result.overrides, all));
   }
 
   Future<void> _apply(List<BulkMove> plan) async {
@@ -154,6 +173,22 @@ class _BulkRescheduleScreenState extends State<BulkRescheduleScreen> {
     if (mounted) Navigator.pop(context);
   }
 
+  // Khoảng ngày chọn nhanh; tuần tính từ Thứ 2 đến Chủ nhật như lưới tuần
+  List<(String, DateTimeRange)> _presets() {
+    final t = _dateOnly(DateTime.now());
+    final mon = t.subtract(Duration(days: t.weekday - 1));
+    DateTimeRange r(DateTime a, int n) => DateTimeRange(
+      start: a,
+      end: a.add(Duration(days: n)),
+    );
+    return [
+      ('Hôm nay', r(t, 0)),
+      ('Ngày mai', r(t.add(const Duration(days: 1)), 0)),
+      ('Tuần này', r(mon, 6)),
+      ('Tuần sau', r(mon.add(const Duration(days: 7)), 6)),
+    ];
+  }
+
   Widget _controls(AppData data) {
     final textTheme = Theme.of(context).textTheme;
     return Padding(
@@ -162,6 +197,19 @@ class _BulkRescheduleScreenState extends State<BulkRescheduleScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Khoảng ngày cần dời', style: textTheme.titleSmall),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              for (final p in _presets())
+                ChoiceChip(
+                  label: Text(p.$1),
+                  selected: _range == p.$2,
+                  onSelected: (_) => _changeSelection(() => _range = p.$2),
+                ),
+            ],
+          ),
           const SizedBox(height: 6),
           OutlinedButton.icon(
             onPressed: _pickRange,
@@ -180,19 +228,22 @@ class _BulkRescheduleScreenState extends State<BulkRescheduleScreen> {
               ChoiceChip(
                 label: const Text('Tất cả'),
                 selected: _labelFilter == _filterAll,
-                onSelected: (_) => _change(() => _labelFilter = _filterAll),
+                onSelected: (_) =>
+                    _changeSelection(() => _labelFilter = _filterAll),
               ),
               ChoiceChip(
                 label: const Text('Không nhãn'),
                 selected: _labelFilter == _filterNone,
-                onSelected: (_) => _change(() => _labelFilter = _filterNone),
+                onSelected: (_) =>
+                    _changeSelection(() => _labelFilter = _filterNone),
               ),
               for (final l in data.labels)
                 ChoiceChip(
                   label: Text(l.name),
                   selectedColor: l.colorValue.withValues(alpha: 0.25),
                   selected: _labelFilter == l.id,
-                  onSelected: (_) => _change(() => _labelFilter = l.id!),
+                  onSelected: (_) =>
+                      _changeSelection(() => _labelFilter = l.id!),
                 ),
             ],
           ),
@@ -381,14 +432,36 @@ class _BulkRescheduleScreenState extends State<BulkRescheduleScreen> {
           const SliverToBoxAdapter(child: Divider(height: 1)),
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-              child: Text(
-                selection.isEmpty
-                    ? 'Không có buổi nào trong khoảng này'
-                    : '${plan.length}/${selection.length} buổi sẽ được dời'
-                          '${conflicts > 0 ? ' - $conflicts buổi trùng lịch' : ''}',
-                style: Theme.of(context).textTheme.titleSmall
-                    ?.copyWith(color: conflicts > 0 ? _orange : null),
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      selection.isEmpty
+                          ? 'Không có buổi nào trong khoảng này'
+                          : '${plan.length}/${selection.length} buổi được tích để dời'
+                                '${conflicts > 0 ? ' - $conflicts buổi trùng lịch' : ''}',
+                      style: Theme.of(context).textTheme.titleSmall
+                          ?.copyWith(color: conflicts > 0 ? _orange : null),
+                    ),
+                  ),
+                  if (selection.isNotEmpty)
+                    TextButton(
+                      onPressed: () => setState(() {
+                        if (active.length == selection.length) {
+                          _skipped.addAll(selection.map((e) => e.id!));
+                          _manual.clear();
+                        } else {
+                          _skipped.clear();
+                        }
+                      }),
+                      child: Text(
+                        active.length == selection.length
+                            ? 'Bỏ chọn hết'
+                            : 'Chọn tất cả',
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
@@ -406,9 +479,11 @@ class _BulkRescheduleScreenState extends State<BulkRescheduleScreen> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
           child: FilledButton.icon(
-            onPressed: plan.isEmpty || _saving ? null : () => _apply(plan),
-            icon: const Icon(Icons.event_repeat),
-            label: Text(plan.isEmpty ? 'Dời lịch' : 'Dời ${plan.length} buổi'),
+            onPressed: plan.isEmpty || _saving ? null : () => _openBoard(plan),
+            icon: const Icon(Icons.calendar_view_week),
+            label: Text(
+              plan.isEmpty ? 'Xem trước' : 'Xem trước ${plan.length} buổi',
+            ),
           ),
         ),
       ),

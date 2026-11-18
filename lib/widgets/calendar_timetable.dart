@@ -138,6 +138,8 @@ class _CalendarTimetableState extends State<CalendarTimetable> {
     );
   }
 
+  bool _jumping = false;
+
   @override
   void didUpdateWidget(covariant CalendarTimetable oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -156,7 +158,11 @@ class _CalendarTimetableState extends State<CalendarTimetable> {
           curve: Curves.easeInOut,
         );
       } else {
+        // jumpToPage gọi _onPageChanged ngay trong lúc build; bên ngoài đã
+        // biết ngày mới nên bỏ qua onAnchorChanged để khỏi setState khi build
+        _jumping = true;
         _pages.jumpToPage(target);
+        _jumping = false;
       }
     }
 
@@ -267,6 +273,7 @@ class _CalendarTimetableState extends State<CalendarTimetable> {
 
   void _onPageChanged(int p) {
     _page = p;
+    if (_jumping) return;
     final first = dateOfDayNumber(_firstDayNumber(p));
     DateTime anchor = first;
     if (_isWeek) {
@@ -716,6 +723,28 @@ class _CalendarTimetableState extends State<CalendarTimetable> {
     DateTime selected,
     ColorScheme scheme,
   ) {
+    if (!_isWeek) {
+      final wd = day.weekday == 7 ? 'Chủ nhật' : 'Thứ ${day.weekday}';
+      return Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            color: day == today ? scheme.primary : null,
+          ),
+          child: Text(
+            '$wd, ${day.day} tháng ${day.month}, ${day.year}',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: day == today
+                  ? scheme.onPrimary
+                  : (day.weekday >= 6 ? Colors.red : null),
+            ),
+          ),
+        ),
+      );
+    }
     return InkWell(
       onTap: widget.onDayTap == null ? null : () => widget.onDayTap!(day),
       child: Column(
@@ -893,8 +922,8 @@ class _CalendarTimetableState extends State<CalendarTimetable> {
     if (todayCol >= 0 && todayCol < _cols) {
       children.add(
         Positioned(
-          left: 0,
-          right: 0,
+          left: todayCol * _colW,
+          width: _colW,
           top: _topFor(nowMin) - 1,
           height: 2,
           child: const IgnorePointer(child: ColoredBox(color: Colors.red)),
@@ -947,7 +976,8 @@ class _CalendarTimetableState extends State<CalendarTimetable> {
     final c = past ? Colors.grey : base;
     final fg = c.computeLuminance() > 0.55 ? Colors.black87 : Colors.white;
     final lines = math.max(1, ((height - 6) / 12).floor());
-    final showTime = height >= 40;
+    // Giờ đã có ở cột bên trái; chỉ hiện khi đang kéo/chọn để thấy giờ mới
+    final showTime = (dragging || selected) && height >= 40;
 
     Border? border;
     if (conflict) {

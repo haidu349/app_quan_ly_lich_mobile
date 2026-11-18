@@ -338,7 +338,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
       floatingActionButton: _selecting
           ? null
           : FloatingActionButton(
-              heroTag: 'calendar_fab', // tránh trùng tag với nút "+" của Sổ cái
+              heroTag:
+                  'calendar_fab', // tránh trùng tag với nút "+" của Danh sách
               onPressed: () =>
                   openEventForm(context, initialDate: _selectedDay),
               child: const Icon(Icons.add),

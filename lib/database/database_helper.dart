@@ -215,6 +215,17 @@ class DatabaseHelper {
     await db.delete('events', where: 'id = ?', whereArgs: [id]);
   }
 
+  Future<void> deleteEvents(List<int> ids) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final id in ids) {
+        batch.delete('events', where: 'id = ?', whereArgs: [id]);
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
   Future<List<Event>> getAllEvents() async {
     final db = await database;
     final rows = await db.query('events', orderBy: 'start_time ASC');

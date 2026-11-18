@@ -25,6 +25,8 @@ class _LedgerScreenState extends State<LedgerScreen> {
   int _labelFilter = _filterAll; // _filterAll, _filterNone hoặc id của nhãn
   int? _yearFilter; // null = tất cả các năm
   bool _hidePast = false; // ẩn lịch đã qua
+  bool _selecting = false; // đang chọn nhiều để xóa
+  final Set<int> _selected = {};
 
   @override
   void dispose() {
@@ -83,7 +85,52 @@ class _LedgerScreenState extends State<LedgerScreen> {
 
   Widget _buildItem(Object item) {
     if (item is DateTime) return DayHeader(day: item);
-    return EventTile(event: item as Event);
+    final e = item as Event;
+    return EventTile(
+      event: e,
+      selecting: _selecting,
+      selected: _selected.contains(e.id),
+      onToggle: () => setState(() {
+        if (!_selected.remove(e.id)) _selected.add(e.id!);
+      }),
+    );
+  }
+
+  void _exitSelecting() => setState(() {
+    _selecting = false;
+    _selected.clear();
+  });
+
+  Future<void> _deleteSelected() async {
+    final data = context.read<AppData>();
+    final messenger = ScaffoldMessenger.of(context);
+    final n = _selected.length;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.delete_outline, color: Colors.red, size: 32),
+        title: Text('Xóa $n sự kiện?'),
+        content: const Text('Hành động này không thể hoàn tác.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Xóa'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await data.deleteEvents({..._selected});
+    if (!mounted) return;
+    _exitSelecting();
+    messenger
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(content: Text('Đã xóa $n sự kiện')));
   }
 
   Widget _chipPadding(Widget chip) =>
@@ -123,14 +170,45 @@ class _LedgerScreenState extends State<LedgerScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Sổ cái'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.today),
-            tooltip: 'Về hôm nay',
-            onPressed: _goToToday,
-          ),
-        ],
+        leading: _selecting
+            ? IconButton(
+                icon: const Icon(Icons.close),
+                tooltip: 'Thoát chọn',
+                onPressed: _exitSelecting,
+              )
+            : null,
+        title: Text(_selecting ? 'Đã chọn ${_selected.length}' : 'Danh sách'),
+        actions: _selecting
+            ? [
+                IconButton(
+                  icon: const Icon(Icons.select_all),
+                  tooltip: 'Chọn tất cả',
+                  onPressed: () => setState(() {
+                    _selected.addAll(
+                      (_hidePast ? upcoming : items).whereType<Event>().map(
+                        (e) => e.id!,
+                      ),
+                    );
+                  }),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                  tooltip: 'Xóa đã chọn',
+                  onPressed: _selected.isEmpty ? null : _deleteSelected,
+                ),
+              ]
+            : [
+                IconButton(
+                  icon: const Icon(Icons.checklist),
+                  tooltip: 'Chọn nhiều để xóa',
+                  onPressed: () => setState(() => _selecting = true),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.today),
+                  tooltip: 'Về hôm nay',
+                  onPressed: _goToToday,
+                ),
+              ],
       ),
       body: data.loading
           ? const Center(child: CircularProgressIndicator())
@@ -301,11 +379,13 @@ class _LedgerScreenState extends State<LedgerScreen> {
                 ),
               ],
             ),
-      floatingActionButton: FloatingActionButton(
-        heroTag: 'ledger_fab',
-        onPressed: () => openEventForm(context),
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: _selecting
+          ? null
+          : FloatingActionButton(
+              heroTag: 'ledger_fab',
+              onPressed: () => openEventForm(context),
+              child: const Icon(Icons.add),
+            ),
     );
   }
 }

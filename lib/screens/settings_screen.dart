@@ -52,6 +52,8 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Future<void> _toggle(bool value) async {
     final data = context.read<AppData>();
+    // Bật công tắt ngay, không chờ hộp xin quyền để nút luôn phản hồi
+    final saving = data.setReminderEnabled(value);
     if (value) {
       final ok = await _svc.ensurePermission();
       if (!mounted) return;
@@ -60,9 +62,12 @@ class _SettingsScreenState extends State<SettingsScreen>
         _snack(
           'Chưa được cấp quyền thông báo. Hãy cấp quyền để nhận nhắc nhở.',
         );
+      } else {
+        await saving;
+        await data.setReminderMinute(data.reminderMinute);
       }
     }
-    await data.setReminderEnabled(value);
+    await saving;
   }
 
   Future<void> _pickTime() async {

@@ -208,6 +208,16 @@ class AppData extends ChangeNotifier {
     await _syncReminders();
   }
 
+  Future<void> deleteEvents(Set<int> ids) async {
+    if (ids.isEmpty) return;
+    _events.removeWhere((e) => ids.contains(e.id));
+    _conflictIds = findConflictingIds(_events);
+    _eventsView = UnmodifiableListView(_events);
+    notifyListeners();
+    await _db.deleteEvents(ids.toList());
+    await _syncReminders();
+  }
+
   // ---------- Nhãn ----------
 
   Future<int> addLabel(EventLabel label) async {

@@ -196,7 +196,7 @@ class _MoveEventScreenState extends State<MoveEventScreen> {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'Giữ khối rồi kéo, hoặc chạm vào ô trống để đặt nhanh',
+                'Chạm vào khối rồi kéo để dời, kéo thanh đáy khối để đổi giờ kết thúc',
                 style: textTheme.bodySmall?.copyWith(color: Colors.grey[700]),
               ),
             ),
@@ -273,6 +273,7 @@ class _MoveEventScreenState extends State<MoveEventScreen> {
               canEdit: (e) => e.id == _pendingId,
               isHighlighted: (e) => e.id == _pendingId,
               onEmptyTap: _place,
+              instantDrag: true,
               onWeekShift: _shiftWeek,
               onEventChanged: (e, s, en) async {
                 setState(() {
@@ -313,20 +314,37 @@ class _MoveEventScreenState extends State<MoveEventScreen> {
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(
-                        conflicts.isEmpty
-                            ? 'Không trùng lịch'
-                            : 'Trùng với ${conflicts.length} sự kiện: '
-                                  '${conflicts.map((e) => e.name).join(', ')}',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: conflicts.isEmpty
-                              ? Colors.green[800]
-                              : _orange,
-                        ),
-                      ),
+                      child: conflicts.isEmpty
+                          ? Text(
+                              'Không trùng lịch',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: Colors.green[800],
+                              ),
+                            )
+                          : ConstrainedBox(
+                              constraints: const BoxConstraints(maxHeight: 96),
+                              child: SingleChildScrollView(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Trùng với ${conflicts.length} sự kiện:',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: _orange,
+                                      ),
+                                    ),
+                                    for (final e in conflicts)
+                                      Text(
+                                        '• ${e.name}  ${formatDate(e.start)} '
+                                        '${formatTimeRange(e.start, e.end)}',
+                                        style: const TextStyle(color: _orange),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
                     ),
                   ],
                 ),

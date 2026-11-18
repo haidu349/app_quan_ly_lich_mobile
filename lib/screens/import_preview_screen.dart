@@ -3,9 +3,11 @@ import 'package:provider/provider.dart';
 import 'package:quan_ly_lich/models/event.dart';
 import 'package:quan_ly_lich/models/event_label.dart';
 import 'package:quan_ly_lich/providers/app_data.dart';
+import 'package:quan_ly_lich/services/conflict_service.dart';
 import 'package:quan_ly_lich/services/import_parser.dart';
 import 'package:quan_ly_lich/utils/format.dart';
 import 'package:quan_ly_lich/utils/palette.dart';
+import 'package:quan_ly_lich/screens/import_board_screen.dart';
 import 'package:quan_ly_lich/screens/move_event_screen.dart';
 
 enum _Filter { all, conflict, error }
@@ -41,7 +43,9 @@ class _ImportPreviewScreenState extends State<ImportPreviewScreen> {
   Set<int> _skipped = {}; // chỉ số các dòng bị bỏ chọn
   Set<int> _duplicates = {}; // chỉ số các dòng đã có sẵn trong lịch
   _Filter _filter = _Filter.all;
+  Map<int, ImportRow> _autoMoved = {}; // dòng vừa tự động dời -> dòng gốc
   bool _saving = false;
+  int? _defaultLabelId; // nhãn cho các dòng không ghi nhãn trong file
 
   @override
   void initState() {
@@ -71,6 +75,7 @@ class _ImportPreviewScreenState extends State<ImportPreviewScreen> {
 
     _rows = List<ImportRow>.of(result.rows);
     _duplicates = dups;
+    _autoMoved = {};
     _skipped = {...dups};
   }
 
@@ -145,6 +150,68 @@ class _ImportPreviewScreenState extends State<ImportPreviewScreen> {
     });
   }
 
+  // Dời dòng [index] tới giờ trống kế tiếp (tính cả lịch có sẵn và các dòng khác trong file)
+  void _autoMoveRow(int index, Iterable<Event> existing) {
+    final row = _rows[index];
+    final others = <Event>[
+      ...existing,
+      for (var j = 0; j < _rows.length; j++)
+        if (j != index && _rows[j].isValid && !_skipped.contains(j))
+          _rows[j].toEvent(),
+    ];
+    final moved = moveToNextFree(row.toEvent(), others);
+    _rows[index] = row.copyWith(
+      start: moved.start,
+      end: moved.end,
+      usedDefaultTime: false,
+      moved: true,
+    );
+    _duplicates.remove(index);
+  }
+
+  void _autoMove(List<int> indices) {
+    final existing = context.read<AppData>().events;
+    setState(() {
+      for (final i in indices) {
+        _autoMoved.putIfAbsent(i, () => _rows[i]);
+        _autoMoveRow(i, existing);
+      }
+    });
+  }
+
+  // Bảng tuần hiện lịch tạm: đồng ý thì nhập luôn, hủy thì trả các dòng tự động dời về giờ cũ
+  Future<void> _review(
+    List<int> importable,
+    Map<String, EventLabel> byName,
+  ) async {
+    int? labelIdOf(ImportRow r) => r.labelName.isEmpty
+        ? _defaultLabelId
+        : byName[normalizeText(r.labelName)]?.id;
+    final temps = [
+      for (final i in importable)
+        _rows[i].toEvent(labelId: labelIdOf(_rows[i])).copyWith(id: -(i + 1)),
+    ];
+    final result = await Navigator.push<Map<int, Event>>(
+      context,
+      MaterialPageRoute(builder: (_) => ImportBoardScreen(temps: temps)),
+    );
+    if (!mounted) return;
+    if (result == null) {
+      setState(() {
+        _autoMoved.forEach((i, r) => _rows[i] = r);
+        _autoMoved = {};
+      });
+      return;
+    }
+    setState(() {
+      for (final e in result.values) {
+        final i = -e.id! - 1;
+        _rows[i] = _rows[i].copyWith(start: e.start, end: e.end, moved: true);
+      }
+    });
+    _import(importable, byName);
+  }
+
   Future<void> _import(
     List<int> indices,
     Map<String, EventLabel> byName,
@@ -171,7 +238,7 @@ class _ImportPreviewScreenState extends State<ImportPreviewScreen> {
         for (final i in indices)
           _rows[i].toEvent(
             labelId: _rows[i].labelName.isEmpty
-                ? null
+                ? _defaultLabelId
                 : idByKey[normalizeText(_rows[i].labelName)],
           ),
       ];
@@ -204,6 +271,7 @@ class _ImportPreviewScreenState extends State<ImportPreviewScreen> {
       if (c.isNotEmpty) conflicts[i] = c;
     }
     final errorCount = _rows.where((r) => !r.isValid).length;
+    final hasAuto = _autoMoved.keys.any(importable.contains);
     final defaultTimeCount = _rows
         .where((r) => r.isValid && r.usedDefaultTime)
         .length;
@@ -268,6 +336,30 @@ class _ImportPreviewScreenState extends State<ImportPreviewScreen> {
                     ),
                   ),
 
+                // Nhãn mặc định cho các dòng không có nhãn
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: DropdownButtonFormField<int?>(
+                    initialValue: _defaultLabelId,
+                    decoration: const InputDecoration(
+                      labelText: 'Nhãn cho dòng không ghi nhãn',
+                      prefixIcon: Icon(Icons.label_outline),
+                    ),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('Không nhãn'),
+                      ),
+                      for (final l in data.labels)
+                        DropdownMenuItem<int?>(
+                          value: l.id,
+                          child: Text(l.name),
+                        ),
+                    ],
+                    onChanged: (v) => setState(() => _defaultLabelId = v),
+                  ),
+                ),
+
                 // Bộ lọc
                 SizedBox(
                   height: 48,
@@ -329,6 +421,7 @@ class _ImportPreviewScreenState extends State<ImportPreviewScreen> {
                                 }
                               }),
                               onMove: () => _move(i),
+                              onAutoMove: () => _autoMove([i]),
                             );
                           },
                         ),
@@ -341,28 +434,46 @@ class _ImportPreviewScreenState extends State<ImportPreviewScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (conflicts.isNotEmpty)
+              if (conflicts.isNotEmpty) ...[
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.only(bottom: 4),
                   child: Text(
                     '${conflicts.length} dòng đang trùng lịch. Bạn có thể dời, bỏ chọn, hoặc vẫn nhập.',
                     style: const TextStyle(color: _orange, fontSize: 12),
                   ),
                 ),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _autoMove(conflicts.keys.toList()),
+                    icon: const Icon(Icons.auto_fix_high),
+                    label: Text('Tự động dời ${conflicts.length} dòng trùng'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
                   onPressed: (importable.isEmpty || _saving)
                       ? null
+                      : hasAuto
+                      ? () => _review(importable, byName)
                       : () => _import(importable, byName),
-                  icon: _saving
+                  icon: hasAuto
+                      ? const Icon(Icons.visibility_outlined)
+                      : _saving
                       ? const SizedBox(
                           width: 16,
                           height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.download_done),
-                  label: Text('Nhập ${importable.length} sự kiện'),
+                  label: Text(
+                    hasAuto
+                        ? 'Xem lịch tạm rồi nhập'
+                        : 'Nhập ${importable.length} sự kiện',
+                  ),
                 ),
               ),
             ],
@@ -392,6 +503,7 @@ class _RowCard extends StatelessWidget {
   final List<Event> conflicts;
   final ValueChanged<bool> onIncludedChanged;
   final VoidCallback onMove;
+  final VoidCallback onAutoMove;
 
   const _RowCard({
     super.key,
@@ -403,6 +515,7 @@ class _RowCard extends StatelessWidget {
     required this.conflicts,
     required this.onIncludedChanged,
     required this.onMove,
+    required this.onAutoMove,
   });
 
   @override
@@ -577,13 +690,26 @@ class _RowCard extends StatelessWidget {
                             ),
                           Align(
                             alignment: Alignment.centerRight,
-                            child: OutlinedButton.icon(
-                              onPressed: onMove,
-                              icon: const Icon(
-                                Icons.lightbulb_outline,
-                                size: 18,
-                              ),
-                              label: const Text('Dời lịch'),
+                            child: Wrap(
+                              spacing: 8,
+                              children: [
+                                OutlinedButton.icon(
+                                  onPressed: onAutoMove,
+                                  icon: const Icon(
+                                    Icons.auto_fix_high,
+                                    size: 18,
+                                  ),
+                                  label: const Text('Tự động dời'),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: onMove,
+                                  icon: const Icon(
+                                    Icons.lightbulb_outline,
+                                    size: 18,
+                                  ),
+                                  label: const Text('Dời lịch'),
+                                ),
+                              ],
                             ),
                           ),
                         ],

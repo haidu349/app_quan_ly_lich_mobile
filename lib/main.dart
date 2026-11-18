@@ -23,8 +23,30 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Quản lý lịch',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
+      theme: _theme(),
       home: const MainShell(),
     );
   }
+}
+
+// Nút chọn đoạn: không viền, nền đậm hơn nền app một chút, có đổ bóng nhẹ
+ThemeData _theme() {
+  final base = ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true);
+  final s = base.colorScheme;
+  return base.copyWith(
+    segmentedButtonTheme: SegmentedButtonThemeData(
+      style: ButtonStyle(
+        side: const WidgetStatePropertyAll(BorderSide.none),
+        elevation: const WidgetStatePropertyAll(2),
+        shadowColor: WidgetStatePropertyAll(
+          Colors.black.withValues(alpha: 0.35),
+        ),
+        backgroundColor: WidgetStateProperty.resolveWith(
+          (st) => st.contains(WidgetState.selected)
+              ? s.secondaryContainer
+              : s.surfaceContainerHigh,
+        ),
+      ),
+    ),
+  );
 }

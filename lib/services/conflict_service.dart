@@ -15,6 +15,20 @@ List<Event> findConflicts(Event candidate, Iterable<Event> existing) {
   return result;
 }
 
+// Dời [e] (giữ độ dài) tới ngay sau lịch trùng gần nhất, lặp lại tới khi hết trùng.
+// shortcut: có thể đẩy qua nửa đêm sang ngày sau, nâng cấp nếu cần giới hạn trong ngày.
+Event moveToNextFree(Event e, Iterable<Event> others) {
+  final span = e.end.difference(e.start);
+  var cur = e;
+  for (var i = 0; i < 200; i++) {
+    final c = findConflicts(cur, others);
+    if (c.isEmpty) break;
+    final end = c.map((x) => x.end).reduce((a, b) => a.isAfter(b) ? a : b);
+    cur = cur.copyWith(start: end, end: end.add(span));
+  }
+  return cur;
+}
+
 // Tập id của mọi sự kiện đang trùng với ít nhất một sự kiện khác
 Set<int> findConflictingIds(Iterable<Event> events) {
   final sorted = events.where((e) => e.id != null).toList()
