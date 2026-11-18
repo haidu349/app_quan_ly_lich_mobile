@@ -224,6 +224,15 @@ class _SettingsScreenState extends State<SettingsScreen>
             subtitle: const Text('Thay toàn bộ lịch hiện tại bằng file đã lưu'),
             onTap: _restore,
           ),
+          SwitchListTile(
+            secondary: const Icon(Icons.auto_delete_outlined),
+            title: const Text('Tự xóa lịch quá 1 năm'),
+            subtitle: const Text(
+              'Khi mở app, xóa sự kiện đã kết thúc hơn 365 ngày. Có hiệu lực từ lần mở app sau.',
+            ),
+            value: data.autoDelete,
+            onChanged: data.setAutoDelete,
+          ),
           const Divider(),
           _SectionTitle('Nhắc nhở hằng ngày'),
           SwitchListTile(

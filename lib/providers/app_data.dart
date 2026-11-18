@@ -31,6 +31,7 @@ class AppData extends ChangeNotifier {
 
   // Nhắc nhở
   bool _reminderEnabled = true;
+  bool _autoDelete = true;
   int _reminderMinute = kDefaultReminderMinute;
   int _scheduledReminderCount = 0;
   bool _syncing = false;
@@ -56,6 +57,7 @@ class AppData extends ChangeNotifier {
   UnmodifiableListView<EventLabel> get labels => _labelsView;
 
   bool get reminderEnabled => _reminderEnabled;
+  bool get autoDelete => _autoDelete;
   int get reminderMinute => _reminderMinute;
   int get scheduledReminderCount => _scheduledReminderCount;
 
@@ -102,7 +104,8 @@ class AppData extends ChangeNotifier {
 
   // Gọi một lần khi mở app
   Future<void> load() async {
-    await _db.deleteOlderThanOneYear(); // tự xóa dữ liệu quá 1 năm
+    _autoDelete = await _db.getSetting('auto_delete') != '0';
+    if (_autoDelete) await _db.deleteOlderThanOneYear();
     await _fetchLabels();
     await _fetchEvents();
     await _loadReminderSettings();
@@ -149,6 +152,12 @@ class AppData extends ChangeNotifier {
       _scheduledReminderCount = await _reminders.reschedule(plan);
     }
     notifyListeners();
+  }
+
+  Future<void> setAutoDelete(bool value) async {
+    _autoDelete = value;
+    notifyListeners();
+    await _db.setSetting('auto_delete', value ? '1' : '0');
   }
 
   Future<void> setReminderEnabled(bool value) async {

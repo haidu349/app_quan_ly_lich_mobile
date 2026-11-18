@@ -19,15 +19,4 @@ Future<PickedExcel?> pickExcelFile() async {
   if (file == null) return null;
   final bytes = await file.readAsBytes();
   return PickedExcel(file.name, bytes);
-
-  // Nếu pubspec.yaml ghi file_picker bản 11 trở xuống, xóa đoạn trên và dùng:
-  //
-  // final result = await FilePicker.platform.pickFiles(
-  //   type: FileType.custom,
-  //   allowedExtensions: ['xlsx'],
-  //   withData: true,
-  // );
-  // final f = result?.files.single;
-  // if (f == null || f.bytes == null) return null;
-  // return PickedExcel(f.name, f.bytes!);
 }

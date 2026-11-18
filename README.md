@@ -15,7 +15,7 @@
 | Nhắc nhở | Thông báo có âm thanh lúc 06:00 (đổi được giờ) liệt kê lịch trong ngày; ngày không có lịch thì không báo |
 | Thống kê | Theo tuần, tháng, năm và theo nhãn |
 | Sao lưu | Xuất toàn bộ lịch và nhãn ra file `.json`, khôi phục từ file đó |
-| Dữ liệu | SQLite cục bộ; tự xóa sự kiện kết thúc quá 365 ngày (chạy mỗi lần mở app) |
+| Dữ liệu | SQLite cục bộ; tự xóa sự kiện kết thúc quá 365 ngày (chạy mỗi lần mở app, tắt được trong Cài đặt) |
 
 ### Nhập từ Excel
 
