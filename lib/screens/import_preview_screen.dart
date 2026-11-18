@@ -6,7 +6,7 @@ import 'package:quan_ly_lich/providers/app_data.dart';
 import 'package:quan_ly_lich/services/import_parser.dart';
 import 'package:quan_ly_lich/utils/format.dart';
 import 'package:quan_ly_lich/utils/palette.dart';
-import 'package:quan_ly_lich/widgets/free_slot_sheet.dart';
+import 'package:quan_ly_lich/screens/move_event_screen.dart';
 
 enum _Filter { all, conflict, error }
 
@@ -108,7 +108,7 @@ class _ImportPreviewScreenState extends State<ImportPreviewScreen> {
     });
   }
 
-  // Dời một dòng sang khoảng trống do người dùng chọn
+  // Dời một dòng bằng bảng tuần; các dòng khác trong file cũng hiện trên bảng
   Future<void> _move(int index) async {
     final row = _rows[index];
     final others = <Event>[
@@ -116,17 +116,28 @@ class _ImportPreviewScreenState extends State<ImportPreviewScreen> {
         if (j != index && _rows[j].isValid && !_skipped.contains(j))
           _rows[j].toEvent(),
     ];
-    final slot = await showFreeSlotSheet(
+
+    Color color = Colors.grey;
+    if (row.labelName.isNotEmpty) {
+      final key = normalizeText(row.labelName);
+      for (final l in context.read<AppData>().labels) {
+        if (normalizeText(l.name) == key) color = l.colorValue;
+      }
+    }
+
+    final result = await showMoveEventScreen(
       context,
-      initialDay: row.start!,
-      durationMinutes: row.durationMinutes,
+      title: row.name,
+      color: color,
+      start: row.start!,
+      end: row.end!,
       extraEvents: others,
     );
-    if (slot == null || !mounted) return;
+    if (result == null || !mounted) return;
     setState(() {
       _rows[index] = row.copyWith(
-        start: slot.start,
-        end: slot.start.add(Duration(minutes: row.durationMinutes)),
+        start: result.start,
+        end: result.end,
         usedDefaultTime: false,
         moved: true,
       );

@@ -17,9 +17,17 @@ const Color _orange = Color(0xFFE65100);
 
 DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
+// Một khối lịch đã vẽ và vùng nó chiếm (tọa độ trong nội dung cuộn)
+class _Hit {
+  final Event event;
+  final Rect rect;
+
+  const _Hit(this.event, this.rect);
+}
+
 // Bảng giờ của một tuần: 7 cột (Th 2 đến CN), các hàng là giờ trong ngày.
 // - Chạm vào khối: mở sửa
-// - Giữ rồi kéo: dời sang giờ hoặc ngày khác
+// - Giữ rồi kéo: dời sang giờ/ngày khác; dí sát mép trái/phải để sang tuần khác
 // - Kéo thanh nhỏ ở đáy khối: đổi giờ kết thúc
 class WeekTimetable extends StatefulWidget {
   final DateTime weekStart; // Thứ Hai đầu tuần
@@ -28,9 +36,24 @@ class WeekTimetable extends StatefulWidget {
   final bool Function(Event event) hasConflict;
   final bool Function(Event event) isPast;
   final DateTime selectedDay;
-  final ValueChanged<Event> onEventTap;
   final EventChangedCallback onEventChanged;
-  final ValueChanged<DateTime> onDaySelected;
+  final ValueChanged<Event>? onEventTap;
+  final ValueChanged<DateTime>? onDaySelected;
+
+  // Gọi với -1 hoặc +1 khi người dùng giữ khối sát mép để sang tuần khác
+  final ValueChanged<int>? onWeekShift;
+
+  // Khối nào được phép dời/giãn (null = tất cả)
+  final bool Function(Event event)? canEdit;
+
+  // Khối nào được vẽ viền đậm để nổi bật
+  final bool Function(Event event)? isHighlighted;
+
+  // Chạm vào ô trống: nhận thời điểm đã làm tròn 15 phút
+  final ValueChanged<DateTime>? onEmptyTap;
+
+  // Giờ (tính bằng phút) cuộn tới khi mở bảng
+  final double initialScrollMinute;
 
   const WeekTimetable({
     super.key,
@@ -40,9 +63,14 @@ class WeekTimetable extends StatefulWidget {
     required this.hasConflict,
     required this.isPast,
     required this.selectedDay,
-    required this.onEventTap,
     required this.onEventChanged,
-    required this.onDaySelected,
+    this.onEventTap,
+    this.onDaySelected,
+    this.onWeekShift,
+    this.canEdit,
+    this.isHighlighted,
+    this.onEmptyTap,
+    this.initialScrollMinute = 6.5 * 60,
   });
 
   @override
@@ -54,41 +82,65 @@ class _WeekTimetableState extends State<WeekTimetable> {
   static const double _gutter = 38; // cột ghi giờ bên trái
   static const double _minBlockHeight = 22;
   static const int _maxMinute = 24 * 60 - 1; // 23:59
+  static const double _edgeZone = 16; // vùng mép trái/phải để lật tuần
 
-  final ScrollController _scroll = ScrollController(
-    initialScrollOffset: 6.5 * _hourHeight,
-  );
+  late final ScrollController _scroll;
   final GlobalKey _viewportKey = GlobalKey();
 
-  // ---- Trạng thái đang dời ----
+  // Số đo của lần vẽ gần nhất (dùng khi xử lý cử chỉ)
+  double _colW = 1;
+  List<DateTime> _days = const [];
+  List<_Hit> _hits = [];
+
+  // ---- Đang dời ----
   Event? _dragEvent;
-  double _dragLeft0 = 0;
-  double _dragTop0 = 0;
-  double _dragW = 0;
-  double _dragH = 0;
-  Offset _dragDelta = Offset.zero;
-  double _dragScroll0 = 0;
+  Offset _grab = Offset.zero; // chỗ ngón tay nắm trong khối
+  Size _dragSize = Size.zero;
+  Offset _finger = Offset.zero; // vị trí ngón tay (tọa độ nội dung)
+  Offset _fingerStart = Offset.zero;
+  double _scrollAtFinger = 0;
+  bool _armed = false; // đã kéo đủ xa mới bật cuộn/lật tuần tự động
   double _autoVelocity = 0;
   Timer? _autoTimer;
+  int _edgeDir = 0;
+  Timer? _edgeTimer;
 
-  // ---- Trạng thái đang giãn giờ kết thúc ----
+  // ---- Đang giãn giờ kết thúc ----
   Event? _resizeEvent;
   double _resizeDy = 0;
 
   @override
+  void initState() {
+    super.initState();
+    _scroll = ScrollController(
+      initialScrollOffset: math.max(
+        0.0,
+        widget.initialScrollMinute / 60 * _hourHeight,
+      ),
+    );
+  }
+
+  @override
   void didUpdateWidget(covariant WeekTimetable oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.weekStart != widget.weekStart) _cancelAll();
+    // Đổi tuần bình thường thì bỏ thao tác dở; đang kéo thì giữ nguyên
+    // (kéo sát mép để sang tuần khác chính là lúc tuần đổi).
+    if (oldWidget.weekStart != widget.weekStart && _dragEvent == null) {
+      _cancelResize();
+    }
   }
 
   @override
   void dispose() {
     _autoTimer?.cancel();
+    _edgeTimer?.cancel();
     _scroll.dispose();
     super.dispose();
   }
 
   // ---------- Tiện ích ----------
+
+  bool _canEdit(Event e) => widget.canEdit?.call(e) ?? true;
 
   double _topFor(int minuteOfDay) => minuteOfDay / 60 * _hourHeight;
 
@@ -101,50 +153,94 @@ class _WeekTimetableState extends State<WeekTimetable> {
 
   double get _scrollOffset => _scroll.hasClients ? _scroll.offset : 0;
 
-  void _stopAuto() {
-    _autoVelocity = 0;
-    _autoTimer?.cancel();
-    _autoTimer = null;
+  _Hit? _hitAt(Offset p) {
+    for (final h in _hits.reversed) {
+      if (h.rect.contains(p)) return h;
+    }
+    return null;
   }
 
-  void _cancelAll() {
-    _stopAuto();
-    _dragEvent = null;
-    _resizeEvent = null;
-    _resizeDy = 0;
+  // ---------- Chạm ----------
+
+  void _onTapUp(TapUpDetails d) {
+    final p = d.localPosition;
+    final hit = _hitAt(p);
+    if (hit != null) {
+      if (_canEdit(hit.event)) widget.onEventTap?.call(hit.event);
+      return;
+    }
+    final onEmpty = widget.onEmptyTap;
+    if (onEmpty == null || p.dx < _gutter || _days.isEmpty) return;
+    final day = ((p.dx - _gutter) / _colW).floor().clamp(0, 6).toInt();
+    final minute = snapMinute(p.dy / _hourHeight * 60)
+        .clamp(0, 23 * 60 + 45)
+        .toInt();
+    final d0 = _days[day];
+    onEmpty(DateTime(d0.year, d0.month, d0.day, 0, minute));
   }
 
   // ---------- Dời ----------
 
-  void _startDrag(Event e, double left, double top, double w, double h) {
+  void _onLongPressStart(LongPressStartDetails d) {
+    final hit = _hitAt(d.localPosition);
+    if (hit == null || !_canEdit(hit.event)) return;
     HapticFeedback.mediumImpact();
     setState(() {
-      _dragEvent = e;
-      _dragLeft0 = left;
-      _dragTop0 = top;
-      _dragW = w;
-      _dragH = h;
-      _dragDelta = Offset.zero;
-      _dragScroll0 = _scrollOffset;
+      _dragEvent = hit.event;
+      _grab = d.localPosition - hit.rect.topLeft;
+      _dragSize = hit.rect.size;
+      _finger = d.localPosition;
+      _fingerStart = d.localPosition;
+      _scrollAtFinger = _scrollOffset;
+      _armed = false;
     });
   }
 
-  void _updateDrag(LongPressMoveUpdateDetails d) {
+  void _onLongPressMove(LongPressMoveUpdateDetails d) {
     if (_dragEvent == null) return;
-    _dragDelta = d.offsetFromOrigin;
+    _finger = d.localPosition;
+    _scrollAtFinger = _scrollOffset;
+    if (!_armed && (_finger - _fingerStart).distance > 24) _armed = true;
+    _updateAutoScrollAndEdges(d.globalPosition);
+    setState(() {});
+  }
 
-    // Kéo sát mép trên/dưới thì bảng tự cuộn
-    var v = 0.0;
+  void _onLongPressEnd(LongPressEndDetails d) => _endDrag();
+
+  // Góc trên trái của khối đang theo ngón tay (tính cả phần bảng đã tự cuộn)
+  Offset get _ghostTopLeft {
+    final y = _finger.dy + (_scrollOffset - _scrollAtFinger);
+    return Offset(_finger.dx - _grab.dx, y - _grab.dy);
+  }
+
+  // Ô đích (ngày, phút bắt đầu) ứng với vị trí đang kéo, đã làm tròn 15 phút
+  ({int day, int minute}) _target() {
+    final e = _dragEvent!;
+    final g = _ghostTopLeft;
+    final center = g.dx + _dragSize.width / 2;
+    final day = ((center - _gutter) / _colW).floor().clamp(0, 6).toInt();
+    final dur = e.end.difference(e.start).inMinutes;
+    final minute = snapMinute(g.dy / _hourHeight * 60)
+        .clamp(0, math.max(0, _maxMinute - dur))
+        .toInt();
+    return (day: day, minute: minute);
+  }
+
+  // Kéo sát mép trên/dưới thì cuộn dọc; sát mép trái/phải thì (sau một lúc) lật tuần
+  void _updateAutoScrollAndEdges(Offset global) {
     final box = _viewportKey.currentContext?.findRenderObject() as RenderBox?;
-    if (box != null && box.hasSize) {
-      final top = box.localToGlobal(Offset.zero).dy;
-      final bottom = top + box.size.height;
-      const edge = 56.0;
-      final y = d.globalPosition.dy;
-      if (y < top + edge) {
-        v = -math.min(14.0, (top + edge - y) / edge * 14);
-      } else if (y > bottom - edge) {
-        v = math.min(14.0, (y - (bottom - edge)) / edge * 14);
+    if (box == null || !box.hasSize) return;
+    final local = global - box.localToGlobal(Offset.zero);
+    final h = box.size.height;
+    final w = box.size.width;
+
+    var v = 0.0;
+    if (_armed) {
+      const edgeV = 56.0;
+      if (local.dy < edgeV) {
+        v = -math.min(14.0, (edgeV - local.dy) / edgeV * 14);
+      } else if (local.dy > h - edgeV) {
+        v = math.min(14.0, (local.dy - (h - edgeV)) / edgeV * 14);
       }
     }
     _autoVelocity = v;
@@ -158,28 +254,52 @@ class _WeekTimetableState extends State<WeekTimetable> {
         if (mounted) setState(() {});
       });
     }
-    setState(() {});
+
+    var dir = 0;
+    if (_armed && widget.onWeekShift != null) {
+      if (local.dx < _gutter + _edgeZone) {
+        dir = -1;
+      } else if (local.dx > w - _edgeZone) {
+        dir = 1;
+      }
+    }
+    _setEdge(dir);
   }
 
-  // Ô đích (ngày, phút bắt đầu) ứng với vị trí đang kéo, đã làm tròn 15 phút
-  ({int day, int minute}) _target(double colW) {
-    final e = _dragEvent!;
-    final top = _dragTop0 + _dragDelta.dy + (_scrollOffset - _dragScroll0);
-    final left = _dragLeft0 + _dragDelta.dx;
-    final center = left + _dragW / 2;
-    final day = ((center - _gutter) / colW).floor().clamp(0, 6).toInt();
-    final dur = e.end.difference(e.start).inMinutes;
-    final minute = snapMinute(top / _hourHeight * 60)
-        .clamp(0, math.max(0, _maxMinute - dur))
-        .toInt();
-    return (day: day, minute: minute);
+  void _setEdge(int dir) {
+    if (dir == _edgeDir) return;
+    _edgeDir = dir;
+    _edgeTimer?.cancel();
+    _edgeTimer = null;
+    if (dir != 0) {
+      _edgeTimer = Timer(const Duration(milliseconds: 700), _flipWeek);
+    }
   }
 
-  void _endDrag(double colW, List<DateTime> days) {
+  void _flipWeek() {
+    final shift = widget.onWeekShift;
+    if (_dragEvent == null || _edgeDir == 0 || shift == null) return;
+    HapticFeedback.selectionClick();
+    shift(_edgeDir);
+    // Vẫn giữ ở mép thì lật tiếp
+    _edgeTimer?.cancel();
+    _edgeTimer = Timer(const Duration(milliseconds: 900), _flipWeek);
+  }
+
+  void _stopAuto() {
+    _autoVelocity = 0;
+    _autoTimer?.cancel();
+    _autoTimer = null;
+    _edgeDir = 0;
+    _edgeTimer?.cancel();
+    _edgeTimer = null;
+  }
+
+  void _endDrag() {
     final e = _dragEvent;
     if (e == null) return;
-    final t = _target(colW);
-    final day = days[t.day];
+    final t = _target();
+    final day = _days[t.day];
     final newStart = DateTime(day.year, day.month, day.day, 0, t.minute);
     final newEnd = newStart.add(e.end.difference(e.start));
     _stopAuto();
@@ -252,6 +372,7 @@ class _WeekTimetableState extends State<WeekTimetable> {
       for (var i = 0; i < 7; i++) DateTime(ws.year, ws.month, ws.day + i),
     ];
     final lineColor = Colors.grey.withValues(alpha: 0.25);
+    final dragging = _dragEvent != null;
 
     return Column(
       children: [
@@ -263,13 +384,15 @@ class _WeekTimetableState extends State<WeekTimetable> {
             child: LayoutBuilder(
               builder: (context, c) {
                 final colW = (c.maxWidth - _gutter) / 7;
+                _colW = colW;
+                _days = days;
                 final todayIdx = days.indexOf(today);
                 final nowMin = _minuteOfDay(DateTime.now());
 
                 return SingleChildScrollView(
                   controller: _scroll,
                   // Đang dời hoặc giãn thì khóa cuộn bằng tay
-                  physics: (_dragEvent != null || _resizeEvent != null)
+                  physics: (dragging || _resizeEvent != null)
                       ? const NeverScrollableScrollPhysics()
                       : null,
                   child: SizedBox(
@@ -354,9 +477,22 @@ class _WeekTimetableState extends State<WeekTimetable> {
                             ),
                           ),
                         ],
-                        // Khối đang kéo + ô đích
-                        if (_dragEvent != null)
-                          ..._buildDragOverlay(days, colW, scheme),
+                        // Lớp nhận cử chỉ cho cả bảng (chạm, giữ rồi kéo)
+                        Positioned.fill(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onTapUp: _onTapUp,
+                            onLongPressStart: _onLongPressStart,
+                            onLongPressMoveUpdate: _onLongPressMove,
+                            onLongPressEnd: _onLongPressEnd,
+                            onLongPressCancel: _cancelDrag,
+                          ),
+                        ),
+                        // Khối đang kéo, ô đích và dải báo mép
+                        if (dragging) ...[
+                          ..._edgeStrips(c.maxHeight, scheme),
+                          ..._buildDragOverlay(scheme),
+                        ],
                       ],
                     ),
                   ),
@@ -379,7 +515,7 @@ class _WeekTimetableState extends State<WeekTimetable> {
           for (final day in days)
             Expanded(
               child: InkWell(
-                onTap: () => widget.onDaySelected(day),
+                onTap: () => widget.onDaySelected?.call(day),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -423,12 +559,15 @@ class _WeekTimetableState extends State<WeekTimetable> {
 
   List<Widget> _buildBlocks(List<DateTime> days, double colW) {
     final widgets = <Widget>[];
+    _hits = <_Hit>[];
+
     for (var di = 0; di < 7; di++) {
       final dayEvents = widget.events
           .where((e) => _dateOnly(e.start) == days[di])
           .toList();
       for (final p in layoutDay(dayEvents)) {
         final e = p.event;
+        final editable = _canEdit(e);
         final startMin = _minuteOfDay(e.start);
         final durMin = e.end.difference(e.start).inMinutes;
         final subW = colW / p.columns;
@@ -445,6 +584,8 @@ class _WeekTimetableState extends State<WeekTimetable> {
             (endMin - startMin) / 60 * _hourHeight - 1,
           );
         }
+        _hits.add(_Hit(e, Rect.fromLTWH(left, top, width, height)));
+
         final faded = _dragEvent != null && _dragEvent!.id == e.id;
         final handleH = (height / 2.5).clamp(10.0, 16.0).toDouble();
 
@@ -457,17 +598,13 @@ class _WeekTimetableState extends State<WeekTimetable> {
             height: height,
             child: Opacity(
               opacity: faded ? 0.3 : 1,
-              child: GestureDetector(
-                onTap: () => widget.onEventTap(e),
-                onLongPressStart: (_) =>
-                    _startDrag(e, left, top, width, height),
-                onLongPressMoveUpdate: _updateDrag,
-                onLongPressEnd: (_) => _endDrag(colW, days),
-                onLongPressCancel: _cancelDrag,
-                child: Stack(
-                  children: [
-                    Positioned.fill(child: _blockBody(e, height)),
-                    // Thanh nhỏ ở đáy để đổi giờ kết thúc
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: _blockBody(e, height, editable: editable),
+                  ),
+                  // Thanh nhỏ ở đáy để đổi giờ kết thúc
+                  if (editable)
                     Positioned(
                       left: 0,
                       right: 0,
@@ -495,8 +632,7 @@ class _WeekTimetableState extends State<WeekTimetable> {
                         ),
                       ),
                     ),
-                  ],
-                ),
+                ],
               ),
             ),
           ),
@@ -510,23 +646,34 @@ class _WeekTimetableState extends State<WeekTimetable> {
   Widget _blockBody(
     Event e,
     double height, {
+    bool editable = true,
     bool dragging = false,
     DateTime? start,
     DateTime? end,
   }) {
+    final scheme = Theme.of(context).colorScheme;
     final past = widget.isPast(e);
+    final highlight = widget.isHighlighted?.call(e) ?? false;
     final base = past ? Colors.grey : widget.colorOf(e);
     final fg = base.computeLuminance() > 0.55 ? Colors.black87 : Colors.white;
     final lines = math.max(1, ((height - 6) / 12).floor());
     final showTime = height >= 40;
     final conflict = widget.hasConflict(e) && !past;
+    final alpha = dragging ? 0.95 : (!editable ? 0.55 : (past ? 0.75 : 0.88));
+
+    Border? border;
+    if (conflict) {
+      border = Border.all(color: _orange, width: highlight ? 3 : 2);
+    } else if (highlight) {
+      border = Border.all(color: scheme.primary, width: 3);
+    }
 
     return Container(
       padding: const EdgeInsets.fromLTRB(3, 2, 3, 2),
       decoration: BoxDecoration(
-        color: base.withValues(alpha: dragging ? 0.95 : (past ? 0.75 : 0.88)),
+        color: base.withValues(alpha: alpha),
         borderRadius: BorderRadius.circular(5),
-        border: conflict ? Border.all(color: _orange, width: 2) : null,
+        border: border,
         boxShadow: dragging
             ? const [
                 BoxShadow(
@@ -563,25 +710,52 @@ class _WeekTimetableState extends State<WeekTimetable> {
     );
   }
 
-  List<Widget> _buildDragOverlay(
-    List<DateTime> days,
-    double colW,
-    ColorScheme scheme,
-  ) {
+  // Hai dải mờ ở mép trái/phải báo "kéo vào đây để sang tuần khác"
+  List<Widget> _edgeStrips(double viewportH, ColorScheme scheme) {
+    if (widget.onWeekShift == null) return const [];
+    Widget strip({required bool left}) {
+      final active = _edgeDir == (left ? -1 : 1);
+      return Positioned(
+        left: left ? _gutter : null,
+        right: left ? null : 0,
+        top: _scrollOffset,
+        height: viewportH,
+        width: _edgeZone + 6,
+        child: IgnorePointer(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: scheme.primary.withValues(alpha: active ? 0.30 : 0.10),
+            ),
+            child: Center(
+              child: Icon(
+                left ? Icons.chevron_left : Icons.chevron_right,
+                size: 18,
+                color: scheme.primary,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return [strip(left: true), strip(left: false)];
+  }
+
+  List<Widget> _buildDragOverlay(ColorScheme scheme) {
     final e = _dragEvent!;
-    final t = _target(colW);
-    final day = days[t.day];
+    final t = _target();
+    final day = _days[t.day];
     final newStart = DateTime(day.year, day.month, day.day, 0, t.minute);
     final newEnd = newStart.add(e.end.difference(e.start));
-    final top = _dragTop0 + _dragDelta.dy + (_scrollOffset - _dragScroll0);
+    final g = _ghostTopLeft;
 
     return [
       // Ô đích đã làm tròn: nơi khối sẽ nằm khi thả tay
       Positioned(
-        left: _gutter + t.day * colW + 1,
+        left: _gutter + t.day * _colW + 1,
         top: _topFor(t.minute),
-        width: colW - 2,
-        height: _dragH,
+        width: _colW - 2,
+        height: _dragSize.height,
         child: IgnorePointer(
           child: DecoratedBox(
             decoration: BoxDecoration(
@@ -594,14 +768,14 @@ class _WeekTimetableState extends State<WeekTimetable> {
       ),
       // Khối đang theo ngón tay
       Positioned(
-        left: _dragLeft0 + _dragDelta.dx,
-        top: top,
-        width: _dragW,
-        height: _dragH,
+        left: g.dx,
+        top: g.dy,
+        width: _dragSize.width,
+        height: _dragSize.height,
         child: IgnorePointer(
           child: _blockBody(
             e,
-            _dragH,
+            _dragSize.height,
             dragging: true,
             start: newStart,
             end: newEnd,

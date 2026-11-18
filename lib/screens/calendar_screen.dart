@@ -282,15 +282,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
             ),
           ],
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-          child: Text(
-            'Chạm để sửa • Giữ rồi kéo để dời • Kéo thanh đáy khối để đổi giờ kết thúc',
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.labelSmall
-                ?.copyWith(color: Colors.grey[600]),
-          ),
-        ),
         const Divider(height: 1),
         Expanded(
           child: WeekTimetable(
@@ -303,6 +294,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
             onEventTap: (e) => openEventForm(context, event: e),
             onEventChanged: _onEventChanged,
             onDaySelected: (d) => setState(() => _selectedDay = d),
+            onWeekShift: _shiftWeek,
           ),
         ),
       ],

@@ -5,7 +5,7 @@ import 'package:quan_ly_lich/models/event_label.dart';
 import 'package:quan_ly_lich/providers/app_data.dart';
 import 'package:quan_ly_lich/services/conflict_service.dart';
 import 'package:quan_ly_lich/utils/format.dart';
-import 'package:quan_ly_lich/widgets/free_slot_sheet.dart';
+import 'package:quan_ly_lich/screens/move_event_screen.dart';
 import 'package:quan_ly_lich/widgets/label_dialog.dart';
 
 class AddEventScreen extends StatefulWidget {
@@ -154,23 +154,39 @@ class _AddEventScreenState extends State<AddEventScreen> {
     });
   }
 
-  // Mở bảng gợi ý thời gian trống, điền ngày/giờ theo khoảng người dùng chọn
+  // Mở bảng tuần để chọn giờ; điền ngày/giờ theo khoảng người dùng chọn
   Future<void> _suggest() async {
-    final duration = _durationMinutes;
-    final slot = await showFreeSlotSheet(
+    final labels = context.read<AppData>().labels;
+    Color color = Colors.grey;
+    for (final l in labels) {
+      if (l.id == _labelId) color = l.colorValue;
+    }
+    final name = _nameController.text.trim();
+    final start = DateTime(
+      _date.year,
+      _date.month,
+      _date.day,
+      _startTime.hour,
+      _startTime.minute,
+    );
+
+    final result = await showMoveEventScreen(
       context,
-      initialDay: _date,
-      durationMinutes: duration,
+      title: name.isEmpty ? 'Sự kiện mới' : name,
+      color: color,
+      start: start,
+      end: start.add(Duration(minutes: _durationMinutes)),
       ignoreEventId: widget.event?.id,
     );
-    if (slot == null || !mounted) return;
+    if (result == null || !mounted) return;
 
-    final newStart = slot.start;
-    final newEnd = newStart.add(Duration(minutes: duration));
     setState(() {
-      _date = DateTime(newStart.year, newStart.month, newStart.day);
-      _startTime = TimeOfDay(hour: newStart.hour, minute: newStart.minute);
-      _endTime = TimeOfDay(hour: newEnd.hour, minute: newEnd.minute);
+      _date = DateTime(result.start.year, result.start.month, result.start.day);
+      _startTime = TimeOfDay(
+        hour: result.start.hour,
+        minute: result.start.minute,
+      );
+      _endTime = TimeOfDay(hour: result.end.hour, minute: result.end.minute);
     });
   }
 
