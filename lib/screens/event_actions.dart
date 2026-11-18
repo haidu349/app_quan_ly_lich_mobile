@@ -6,16 +6,24 @@ import 'package:quan_ly_lich/screens/add_event_screen.dart';
 
 // event = null: thêm mới, có giá trị: sửa.
 // initialDate: ngày chọn sẵn khi thêm mới.
+// initialStart/initialEnd: giờ bắt đầu và kết thúc chọn sẵn khi thêm mới.
 Future<void> openEventForm(
   BuildContext context, {
   Event? event,
   DateTime? initialDate,
+  DateTime? initialStart,
+  DateTime? initialEnd,
 }) async {
   final data = context.read<AppData>();
   final result = await Navigator.push<Event>(
     context,
     MaterialPageRoute(
-      builder: (_) => AddEventScreen(event: event, initialDate: initialDate),
+      builder: (_) => AddEventScreen(
+        event: event,
+        initialDate: initialDate,
+        initialStart: initialStart,
+        initialEnd: initialEnd,
+      ),
     ),
   );
   if (result == null) return;
