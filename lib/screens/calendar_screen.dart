@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:quan_ly_lich/models/event.dart';
 import 'package:quan_ly_lich/providers/app_data.dart';
+import 'package:quan_ly_lich/screens/bulk_reschedule_screen.dart';
 import 'package:quan_ly_lich/screens/event_actions.dart';
 import 'package:quan_ly_lich/utils/format.dart';
 import 'package:quan_ly_lich/widgets/calendar_timetable.dart';
@@ -30,6 +31,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
   DateTime _selectedDay = _dateOnly(DateTime.now());
   DateTime _focusedDay = _dateOnly(DateTime.now()); // tháng đang hiện trên lưới
   bool _selecting = false; // đang chọn một khối trên bảng giờ
+
+  // Nhóm sự kiện theo ngày chỉ tính lại khi danh sách sự kiện thực sự đổi.
+  List<Event>? _groupedSource;
+  Map<DateTime, List<Event>> _groupedByDay = const {};
 
   // Tuần và Tháng dùng chung một bảng; Ngày dùng bảng riêng
   bool _sameGroup(CalendarMode a, CalendarMode b) =>
@@ -67,38 +72,36 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   // Gom sự kiện theo ngày (dùng cho chấm màu trên lưới tháng)
   Map<DateTime, List<Event>> _groupByDay(List<Event> events) {
+    if (identical(_groupedSource, events)) return _groupedByDay;
     final map = <DateTime, List<Event>>{};
     for (final e in events) {
       map.putIfAbsent(_dateOnly(e.start), () => []).add(e);
     }
+    _groupedSource = events;
+    _groupedByDay = map;
     return map;
   }
 
-  // Sau khi dời hoặc đổi giờ trên bảng: lưu, báo kết quả, cho hoàn tác
-  Future<void> _onEventChanged(Event old, DateTime start, DateTime end) async {
-    final data = context.read<AppData>();
-    final messenger = ScaffoldMessenger.of(context);
-    final updated = old.copyWith(start: start, end: end);
-    await data.updateEvent(updated);
+  String _headerTitle() {
+    switch (_mode) {
+      case CalendarMode.day:
+        return formatDayHeader(_selectedDay);
+      case CalendarMode.week:
+        final monday = _selectedDay.subtract(
+          Duration(days: _selectedDay.weekday - 1),
+        );
+        final sunday = monday.add(const Duration(days: 6));
+        return 'Tuần ${monday.day}/${monday.month} - ${sunday.day}/${sunday.month}';
+      case CalendarMode.month:
+        return 'tháng ${_selectedDay.month}, ${_selectedDay.year}';
+    }
+  }
 
-    final conflicts = data.conflictsFor(updated);
-    final when = '${formatDayHeader(start)} ${formatTimeRange(start, end)}';
-    messenger
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(
-          duration: const Duration(seconds: 5),
-          content: Text(
-            conflicts.isEmpty
-                ? 'Đã dời "${old.name}" sang $when'
-                : 'Đã dời "${old.name}" sang $when, nhưng trùng với ${conflicts.length} sự kiện',
-          ),
-          action: SnackBarAction(
-            label: 'Hoàn tác',
-            onPressed: () => data.updateEvent(old),
-          ),
-        ),
-      );
+  // Sau khi dời hoặc đổi giờ trên bảng: chỉ lưu, không hiện thông báo
+  Future<void> _onEventChanged(Event old, DateTime start, DateTime end) {
+    return context.read<AppData>().updateEvent(
+      old.copyWith(start: start, end: end),
+    );
   }
 
   Future<void> _deleteEvent(Event e) async {
@@ -127,7 +130,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     children: [
                       Flexible(
                         child: Text(
-                          'tháng ${_selectedDay.month}, ${_selectedDay.year}',
+                          _headerTitle(),
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.titleMedium
                               ?.copyWith(fontWeight: FontWeight.bold),
@@ -275,6 +278,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
       appBar: AppBar(
         title: const Text('Lịch'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.event_repeat),
+            tooltip: 'Dời lịch hàng loạt',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const BulkRescheduleScreen()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.today),
             tooltip: 'Về hôm nay',

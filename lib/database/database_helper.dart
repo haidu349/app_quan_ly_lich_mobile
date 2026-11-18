@@ -198,6 +198,18 @@ class DatabaseHelper {
     );
   }
 
+  // Sửa nhiều sự kiện trong một giao dịch: lỗi giữa chừng thì không ghi dở
+  Future<void> updateEvents(List<Event> events) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final e in events) {
+        batch.update('events', e.toMap(), where: 'id = ?', whereArgs: [e.id]);
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
   Future<void> deleteEvent(int id) async {
     final db = await database;
     await db.delete('events', where: 'id = ?', whereArgs: [id]);

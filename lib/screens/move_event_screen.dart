@@ -19,6 +19,8 @@ class MoveResult {
 
 // Mở màn hình bảng tuần để chọn chỗ dời cho một sự kiện.
 // - ignoreEventId: sự kiện đang sửa (không tính nó là "lịch khác")
+// - ignoreEventIds: nhiều sự kiện cùng bị bỏ qua (dời hàng loạt: các buổi
+//   trong đợt sắp đi chỗ khác nên không còn chiếm giờ cũ)
 // - extraEvents: lịch chưa lưu nhưng cần tránh (ví dụ các dòng chờ nhập từ Excel)
 Future<MoveResult?> showMoveEventScreen(
   BuildContext context, {
@@ -27,6 +29,7 @@ Future<MoveResult?> showMoveEventScreen(
   required DateTime start,
   required DateTime end,
   int? ignoreEventId,
+  Set<int> ignoreEventIds = const {},
   List<Event> extraEvents = const [],
 }) {
   return Navigator.push<MoveResult>(
@@ -39,6 +42,7 @@ Future<MoveResult?> showMoveEventScreen(
         start: start,
         end: end,
         ignoreEventId: ignoreEventId,
+        ignoreEventIds: ignoreEventIds,
         extraEvents: extraEvents,
       ),
     ),
@@ -51,6 +55,7 @@ class MoveEventScreen extends StatefulWidget {
   final DateTime start;
   final DateTime end;
   final int? ignoreEventId;
+  final Set<int> ignoreEventIds;
   final List<Event> extraEvents;
 
   const MoveEventScreen({
@@ -60,6 +65,7 @@ class MoveEventScreen extends StatefulWidget {
     required this.start,
     required this.end,
     this.ignoreEventId,
+    this.ignoreEventIds = const {},
     this.extraEvents = const [],
   });
 
@@ -95,7 +101,9 @@ class _MoveEventScreenState extends State<MoveEventScreen> {
     var nextId = -2; // lịch chưa lưu cần id riêng để bảng phân biệt được
     _others = [
       for (final e in data.events)
-        if (e.id != widget.ignoreEventId) e,
+        if (e.id != widget.ignoreEventId &&
+            !widget.ignoreEventIds.contains(e.id))
+          e,
       for (final e in widget.extraEvents) e.copyWith(id: nextId--),
     ];
   }

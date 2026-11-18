@@ -17,6 +17,12 @@ class AppData extends ChangeNotifier {
 
   List<Event> _events = [];
   List<EventLabel> _labels = [];
+  // Giữ một view duy nhất cho đến khi dữ liệu thực sự đổi. Trước đây mỗi lần
+  // gọi getter tạo một UnmodifiableListView mới -> widget con rebuild vô ích.
+  UnmodifiableListView<Event> _eventsView = UnmodifiableListView(<Event>[]);
+  UnmodifiableListView<EventLabel> _labelsView = UnmodifiableListView(
+    <EventLabel>[],
+  );
   Map<int, EventLabel> _labelMap = {};
   Set<int> _conflictIds = {}; // id các sự kiện đang trùng giờ với sự kiện khác
   bool _loading = true;
@@ -45,8 +51,8 @@ class AppData extends ChangeNotifier {
   }
 
   bool get loading => _loading;
-  UnmodifiableListView<Event> get events => UnmodifiableListView(_events);
-  UnmodifiableListView<EventLabel> get labels => UnmodifiableListView(_labels);
+  UnmodifiableListView<Event> get events => _eventsView;
+  UnmodifiableListView<EventLabel> get labels => _labelsView;
 
   bool get reminderEnabled => _reminderEnabled;
   int get reminderMinute => _reminderMinute;
@@ -77,11 +83,13 @@ class AppData extends ChangeNotifier {
   Future<void> _fetchLabels() async {
     _labels = await _db.getAllLabels();
     _labelMap = {for (final l in _labels) l.id!: l};
+    _labelsView = UnmodifiableListView(_labels);
   }
 
   Future<void> _fetchEvents() async {
     _events = await _db.getAllEvents();
     _conflictIds = findConflictingIds(_events);
+    _eventsView = UnmodifiableListView(_events);
   }
 
   Future<void> _loadReminderSettings() async {
@@ -97,6 +105,9 @@ class AppData extends ChangeNotifier {
     await _fetchLabels();
     await _fetchEvents();
     await _loadReminderSettings();
+
+    // runApp() đã chạy từ trước, nên chỗ này không chặn frame đầu tiên.
+    await _reminders.init();
     _loading = false;
     notifyListeners();
 
@@ -176,11 +187,22 @@ class AppData extends ChangeNotifier {
     await _syncReminders();
   }
 
+  // Sửa nhiều sự kiện một lần (dời lịch hàng loạt, hoàn tác): một giao dịch,
+  // chỉ tải lại và hẹn lại nhắc nhở đúng một lần cho cả đợt.
+  Future<void> updateEvents(List<Event> events) async {
+    if (events.isEmpty) return;
+    await _db.updateEvents(events);
+    await _fetchEvents();
+    notifyListeners();
+    await _syncReminders();
+  }
+
   // Bỏ khỏi danh sách ngay rồi mới xóa trong database,
   // để thẻ biến mất tức thì khi vuốt.
   Future<void> deleteEvent(int id) async {
     _events.removeWhere((e) => e.id == id);
     _conflictIds = findConflictingIds(_events);
+    _eventsView = UnmodifiableListView(_events);
     notifyListeners();
     await _db.deleteEvent(id);
     await _syncReminders();
